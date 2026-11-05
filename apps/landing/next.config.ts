@@ -1,8 +1,9 @@
 import type { NextConfig } from "next";
 
 /**
- * The public marketing site (stellance-v3 `apps/landing` pattern). No basePath: it owns the root domain;
- * the app (`apps/web`) and admin console live on their own hosts. Links to them are plain <a> (src/lib/site.ts).
+ * The public marketing site (stellance-v3 `apps/landing` pattern). No basePath: it owns the domain root. With Vercel
+ * Services (vercel.json) the app is at `/app` and the admin console at `/admin` on the same domain; links to them are
+ * plain <a> (src/lib/site.ts).
  */
 const nextConfig: NextConfig = {
 	env: { NEXT_PUBLIC_VERCEL_ENV: process.env.VERCEL_ENV ?? "" },

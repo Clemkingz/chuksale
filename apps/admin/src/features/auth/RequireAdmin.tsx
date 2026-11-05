@@ -2,6 +2,7 @@
 
 import { useEffect, useSyncExternalStore, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { withoutBasePath } from "@/lib/site";
 import { isExpired, useAdminSession } from "@/features/auth/session";
 
 const subscribe = (cb: () => void) => useAdminSession.persist.onFinishHydration(cb);
@@ -15,7 +16,7 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
 	const signedIn = !!token && !isExpired(expiresAt);
 
 	useEffect(() => {
-		if (ready && !signedIn) router.replace(`/sign-in?next=${encodeURIComponent(window.location.pathname)}`);
+		if (ready && !signedIn) router.replace(`/sign-in?next=${encodeURIComponent(withoutBasePath(window.location.pathname))}`);
 	}, [ready, signedIn, router]);
 
 	if (!ready || !signedIn) return null;

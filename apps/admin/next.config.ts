@@ -1,10 +1,11 @@
 import type { NextConfig } from "next";
 
 /**
- * Same setup as stellance-v3: on Vercel previews this app sits under `/admin` (shared preview host); in dev it is
- * the root of localhost:3001. Anything building a URL by hand reads NEXT_PUBLIC_BASE_PATH.
+ * Vercel Services (vercel.json): one domain, landing at `/`, web at `/app`, admin at `/admin`. On Vercel (builds and
+ * `vercel dev`, where VERCEL=1) this app is mounted under `/admin`; with plain `pnpm dev` it is the root of
+ * localhost:3001. `BASE_PATH` overrides both. Anything building a URL by hand reads NEXT_PUBLIC_BASE_PATH.
  */
-const BASE_PATH = process.env.VERCEL_ENV === "preview" ? "/admin" : "";
+const BASE_PATH = process.env.BASE_PATH ?? (process.env.VERCEL ? "/admin" : "");
 
 /** The real API (once it exists). Mock mode never calls it: the axios adapter answers in the browser. */
 const API_ORIGIN = process.env.API_PROXY_TARGET || "http://localhost:8080/api/v1";

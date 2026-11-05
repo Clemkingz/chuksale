@@ -11,6 +11,7 @@ import { cn } from "@repo/ui/lib/utils";
 import { errorMessage, errorStatus } from "@/lib/api/errors";
 import { EXPLORER, fullDate, money, shortKey, timeAgo } from "@/lib/format";
 import { routes } from "@/lib/routes";
+import { withBasePath } from "@/lib/site";
 import { Avatar, WalletDot } from "@/components/Avatar";
 import { EmptyState, ErrorState, Pager, RowsSkeleton, StatusPill } from "@/components/ui";
 import { useAdminProject, useProjectContributions } from "@/features/projects/hooks";
@@ -84,7 +85,7 @@ export function ProjectDetailView({ id }: { id: string }) {
 			<div className="relative mt-3 h-[140px] overflow-hidden sm:h-[200px] lg:mx-8 lg:rounded-2xl xl:h-[250px]">
 				{/* eslint-disable-next-line @next/next/no-img-element */}
 				<img
-					src="/images/profile-banner.webp"
+					src={withBasePath("/images/profile-banner.webp")}
 					alt=""
 					data-parallax="0.15"
 					className="absolute inset-x-0 -top-6 h-[calc(100%+3rem)] w-full object-cover"

@@ -6,6 +6,7 @@ import { formatAmount, progressPercent } from "@repo/domain/money";
 import type { PublicProject } from "@repo/domain/types";
 import { cn } from "@repo/ui/lib/utils";
 import { routes } from "@/lib/routes";
+import { withBasePath } from "@/lib/site";
 import { ProjectLogo } from "@/components/ProjectLogo";
 import { Progress } from "@/components/Progress";
 
@@ -37,7 +38,11 @@ export function ProjectCard({ project: p, index = 0 }: { project: PublicProject;
 						TINTS[p.category?.id ?? ""] ?? "from-primary-500/40 via-primary-500/10",
 					)}
 				>
-					<div aria-hidden className="absolute inset-0 bg-[url('/images/grid.webp')] bg-cover opacity-30 mix-blend-screen" />
+					<div
+						aria-hidden
+						className="absolute inset-0 bg-cover opacity-30 mix-blend-screen"
+						style={{ backgroundImage: `url(${withBasePath("/images/grid.webp")})` }}
+					/>
 					<div className="absolute top-3 right-3 flex gap-1.5">
 						{p.featured && (
 							<span className="rounded-full bg-black/40 px-2.5 py-1 text-xs text-white backdrop-blur">Featured</span>

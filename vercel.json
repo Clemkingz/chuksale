@@ -1,0 +1,24 @@
+{
+	"$schema": "https://openapi.vercel.sh/vercel.json",
+	"services": {
+		"landing": {
+			"root": "apps/landing",
+			"framework": "nextjs"
+		},
+		"web": {
+			"root": "apps/web",
+			"framework": "nextjs"
+		},
+		"admin": {
+			"root": "apps/admin",
+			"framework": "nextjs"
+		}
+	},
+	"rewrites": [
+		{ "source": "/admin", "destination": { "service": "admin" } },
+		{ "source": "/admin/(.*)", "destination": { "service": "admin" } },
+		{ "source": "/app", "destination": { "service": "web" } },
+		{ "source": "/app/(.*)", "destination": { "service": "web" } },
+		{ "source": "/(.*)", "destination": { "service": "landing" } }
+	]
+}

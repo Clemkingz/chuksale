@@ -20,6 +20,10 @@ packages/ui/         @repo/ui: tokens, shadcn components, motion
 packages/eslint-config, packages/typescript-config
 ```
 
+Deploy: one Vercel project with Services (`vercel.json`): landing at `/`, web at `/app`, admin at `/admin`. On Vercel
+(`VERCEL=1`) web and admin build with that basePath; plain `pnpm dev` keeps them at the root of :3000 / :3001. Own-file
+`<img>`/`<a>` paths go through `withBasePath()`; cross-app links use `LANDING_URL` / `ADMIN_URL` / `APP_URL` / `WEB_URL`.
+
 `pnpm dev` · `pnpm build` · `pnpm check-types` · `pnpm lint` · `pnpm test` · `pnpm format` (tabs, width 130).
 
 ## Data

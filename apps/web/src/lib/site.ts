@@ -28,11 +28,14 @@ function withBasePath(src: string) {
 
 const SITE_URL = new URL(`${BASE_PATH}/`, ORIGIN);
 
-/** The landing site (apps/landing). Link to it with a plain <a>. */
-const LANDING_URL = process.env.NEXT_PUBLIC_LANDING_URL ?? "http://localhost:3002";
+/** Mounted under a base path = deployed with Vercel Services (one domain: landing `/`, web `/app`, admin `/admin`). */
+const ON_SHARED_DOMAIN = BASE_PATH !== "";
 
-/** The admin console (apps/admin). Link to it with a plain <a>. */
-const ADMIN_URL = process.env.NEXT_PUBLIC_ADMIN_URL ?? "http://localhost:3001";
+/** The landing site (apps/landing, the domain root). Link to it with a plain <a>. */
+const LANDING_URL = process.env.NEXT_PUBLIC_LANDING_URL ?? (ON_SHARED_DOMAIN ? "" : "http://localhost:3002");
+
+/** The admin console (apps/admin, under /admin). Link to it with a plain <a>. */
+const ADMIN_URL = process.env.NEXT_PUBLIC_ADMIN_URL ?? (ON_SHARED_DOMAIN ? "/admin" : "http://localhost:3001");
 
 export {
 	SITE_NAME,

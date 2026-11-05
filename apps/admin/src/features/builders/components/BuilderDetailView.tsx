@@ -10,6 +10,7 @@ import { errorMessage, errorStatus } from "@/lib/api/errors";
 import { money, shortKey } from "@/lib/format";
 import { notify } from "@/lib/notify";
 import { routes } from "@/lib/routes";
+import { withBasePath } from "@/lib/site";
 import { Avatar } from "@/components/Avatar";
 import { TimeLeft } from "@/components/TimeLeft";
 import { EmptyState, ErrorState, Pager, RowsSkeleton, StatusPill } from "@/components/ui";
@@ -78,7 +79,7 @@ export function BuilderDetailView({ id }: { id: string }) {
 			<div className="relative mt-3 h-[130px] overflow-hidden sm:h-[190px] lg:mx-8 lg:rounded-2xl xl:h-[230px]">
 				{/* eslint-disable-next-line @next/next/no-img-element */}
 				<img
-					src="/images/profile-banner.webp"
+					src={withBasePath("/images/profile-banner.webp")}
 					alt=""
 					data-parallax="0.15"
 					className="absolute inset-x-0 -top-6 h-[calc(100%+3rem)] w-full object-cover"

@@ -25,9 +25,6 @@ const THEME_COLOR = "#05070c";
 /** TODO: the real handle once the account exists. */
 const TWITTER_HANDLE = "@chucksales";
 
-/** Read through next.config `env`, so client components agree with the server render. */
-const IS_PRODUCTION = process.env.NEXT_PUBLIC_VERCEL_ENV === "production";
-
 /** Absolute URL of this site: NEXT_PUBLIC_SITE_URL → the deployment URL on Vercel → localhost in dev. */
 const SITE_URL = new URL(
 	process.env.NEXT_PUBLIC_SITE_URL ?? (process.env.VERCEL_URL && `https://${process.env.VERCEL_URL}`) ?? "http://localhost:3002",
@@ -37,7 +34,7 @@ const SITE_URL = new URL(
  * The app (`apps/web`). Links into it are plain <a>s: a <Link> would route inside this landing app.
  * TODO: production host once the domain is chosen.
  */
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? (IS_PRODUCTION ? "/app" : "http://localhost:3000");
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? (process.env.NEXT_PUBLIC_VERCEL_ENV ? "/app" : "http://localhost:3000");
 
 const APP_LINKS = {
 	projects: `${APP_URL}/projects`,

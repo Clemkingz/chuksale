@@ -11,7 +11,9 @@
         ".env*"
       ],
       "env": [
+        "VERCEL",
         "VERCEL_ENV",
+        "BASE_PATH",
         "VERCEL_URL",
         "NEXT_PUBLIC_*",
         "API_PROXY_TARGET"

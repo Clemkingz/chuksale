@@ -31,6 +31,7 @@ import { cn } from "@repo/ui/lib/utils";
 import { errorData, errorMessage } from "@/lib/api/errors";
 import { notify } from "@/lib/notify";
 import { routes } from "@/lib/routes";
+import { WEB_URL } from "@/lib/site";
 import { useDecision, useFeature, useVisibility } from "@/features/projects/hooks";
 
 /**
@@ -47,8 +48,6 @@ const DECISION: Record<ReviewDecision, { label: string; icon: typeof CheckCircle
 	request_changes: { label: "Request changes", icon: MessageSquareWarning, tone: "text-warning-200", done: "Changes requested" },
 	reject: { label: "Reject", icon: XCircle, tone: "text-error-200", done: "Project rejected" },
 };
-
-const PUBLIC_WEB = process.env.NEXT_PUBLIC_WEB_URL ?? "http://localhost:3000";
 
 export function ProjectActions({
 	project,
@@ -169,7 +168,7 @@ export function ProjectActions({
 					)}
 					{live && (
 						<DropdownMenuItem asChild className="cursor-pointer gap-2.5 rounded-lg p-2.5 focus:bg-white/[0.06] focus:text-white">
-							<a href={`${PUBLIC_WEB}/projects/${project.slug}`} target="_blank" rel="noopener noreferrer">
+							<a href={`${WEB_URL}/projects/${project.slug}`} target="_blank" rel="noopener noreferrer">
 								<Eye className="size-4 text-white/60" /> Open public page
 							</a>
 						</DropdownMenuItem>
