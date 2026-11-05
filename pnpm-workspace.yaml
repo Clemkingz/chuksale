@@ -1,0 +1,13 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+allowBuilds:
+  core-js: false
+  sharp: false
+  unrs-resolver: false
+  # Pulled in by @creit.tech/stellar-wallets-kit: optional native speed-ups (bufferutil / utf-8-validate for ws,
+  # secp256k1 falls back to pure JS) and a postinstall script; none are needed to run (as in the stellance-v3 reference).
+  '@reown/appkit': false
+  bufferutil: false
+  secp256k1: false
+  utf-8-validate: false

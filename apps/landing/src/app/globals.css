@@ -1,0 +1,53 @@
+@import "@repo/ui/globals.css";
+
+/* Let Tailwind scan the shared UI package for the utility classes it uses. */
+@source "../../../../packages/ui/src/**/*.{ts,tsx}";
+
+/* Landing layout (design frame: 1440px; nav/CTA content 1180px, feature/stat content ~1000px). */
+@utility lp-container {
+	@apply mx-auto w-full max-w-[1220px] px-4 sm:px-6 lg:px-5;
+}
+
+@utility lp-narrow {
+	@apply mx-auto w-full max-w-[1040px] px-4 sm:px-6 lg:px-5;
+}
+
+/* Soft periwinkle glows from the design's side lights (replaces the blur PNGs). */
+@utility lp-glow {
+	@apply pointer-events-none absolute rounded-full;
+	background: radial-gradient(closest-side, rgb(104 140 236 / 0.28), rgb(104 140 236 / 0) 100%);
+	filter: blur(20px);
+}
+
+/* Design buttons: 8px radius, Roboto regular. */
+@utility lp-btn {
+	@apply inline-flex items-center justify-center rounded-lg font-normal whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-primary-300 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-900;
+	transition-property: color, background-color, border-color, box-shadow, transform;
+	transition-duration: 200ms;
+	transition-timing-function: var(--ease-settle);
+
+	/* Press feedback: a slight sink, quick to recover. */
+	&:active {
+		transform: scale(0.97);
+		transition-duration: 80ms;
+	}
+}
+
+/* An arrow inside an lp-btn.group that slides forward on hover/focus. */
+@utility lp-nudge {
+	transition: transform 200ms var(--ease-settle);
+	:where(.group:hover, .group:focus-visible) & {
+		transform: translateX(3px);
+	}
+}
+
+html {
+	scroll-padding-top: 96px;
+}
+
+/* The landing is dark. Unlayered on purpose: the shared stylesheet's `body` rule is unlayered too, so a
+   utility class on <body> can't override it. */
+body {
+	background-color: var(--color-surface-900);
+	color: #ffffff;
+}

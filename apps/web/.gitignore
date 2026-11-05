@@ -1,0 +1,39 @@
+# dependencies
+/node_modules
+
+# next.js
+/.next/
+/.next-verify/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+!.env.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# Promo / walkthrough videos (/brag): keep the setups (plans, compositions, scripts), not the media.
+# Renders, screen recordings, voice-over and music are heavy and can be regenerated.
+brag-output*/**/*.mp4
+brag-output*/**/*.mov
+brag-output*/**/*.webm
+brag-output*/**/*.wav
+brag-output*/**/*.mp3
+brag-output*/**/*.ogg
+brag-output*/**/*.y4m

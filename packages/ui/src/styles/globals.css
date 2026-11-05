@@ -1,0 +1,510 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* ---------------------------------------------------------------------- */
+/* Chucksales design tokens, shared by landing, web and admin.            */
+/*   Primary  #688CEC (periwinkle; actions, highlights)                   */
+/*   Surface  #05070C page · #161626 / #171821 cards · #1E2030 icon tiles */
+/* Fonts: Roboto (body, loaded by each app with next/font as             */
+/*   --font-roboto) and SF Pro Display (headings, `font-display`).        */
+/*   SF Pro can't be self-hosted (Apple licence), so it renders on Apple  */
+/*   devices and falls back to the system UI font elsewhere.              */
+/* Status colours (success/error/info/warning) are still the reference   */
+/* project's until the design shows them.                                 */
+/* ---------------------------------------------------------------------- */
+
+/* @custom-variant dark (&:is(.dark *)); */
+
+@theme inline {
+	--font-sans: var(--font-roboto), "Roboto", system-ui, sans-serif;
+	--font-display: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Helvetica Neue", var(--font-roboto), sans-serif;
+}
+
+@theme {
+	/* primary shade */
+	--color-primary-700: #3d5bb3;
+	--color-primary-600: #4f73d6;
+	--color-primary-500: #688cec;
+	--color-primary-400: #7babf9;
+	--color-primary-300: #a3c1fb;
+	--color-primary-200: #c6d8fd;
+	--color-primary-100: #e1eafe;
+	--color-primary-50: #f0f5ff;
+	--color-primary-20: #688cec33;
+	/* Dark surfaces (landing and any dark screens) */
+	--color-surface-900: #05070c;
+	--color-surface-800: #0f1322;
+	--color-surface-700: #161626;
+	--color-surface-600: #171821;
+	--color-surface-500: #1e2030;
+	--color-surface-line: #ffffff26;
+	/* Neutral */
+	--color-neutral-900: #8c8c8c;
+	--color-neutral-800: #aaaaaa;
+	--color-neutral-700: #bfbfbf;
+	--color-neutral-600: #e6e6e6;
+	--color-neutral-500: #ffffff;
+	--color-neutral-comment: #f4f4f4;
+	/* Success */
+	--color-success-700: #00492e;
+	--color-success-600: #00623e;
+	--color-success-500: #007a4d;
+	--color-success-400: #189567;
+	--color-success-300: #31af81;
+	--color-success-200: #49ca9a;
+	--color-success-100: #6ef2c1;
+	--color-success-50: #d5ffde;
+	/* Error */
+	--color-error-600: #6c1d00;
+	--color-error-500: #b43000;
+	--color-error-400: #cb0500;
+	--color-error-300: #d26d48;
+	--color-error-200: #e18b6c;
+	--color-error-100: #f0aa90;
+	--color-error-50: #ffdde1;
+	/* info */
+	--color-info-600: #0022af;
+	--color-info-500: #002bdb;
+	--color-info-400: #3355e2;
+	--color-info-300: #508dfa;
+	--color-info-200: #86b1ff;
+	--color-info-100: #dce8fe;
+	--color-info-50: #e5eafb;
+	/* warning */
+	--color-warning-900: #513d02;
+	--color-warning-800: #6a5003;
+	--color-warning-700: #9c7604;
+	--color-warning-600: #cd9506;
+	--color-warning-500: #ffc107;
+	--color-warning-400: #ffcd39;
+	--color-warning-300: #ffda6a;
+	--color-warning-200: #ffecb5;
+	--color-warning-100: #fff3cd;
+	--color-warning-50: #fff9e6;
+
+	/* orange */
+	--color--orange-500: #ff8d28;
+
+	/* Black */
+	--color-black-500: #14171f;
+	--color-black-400: #23252c;
+}
+
+html {
+	scroll-behavior: smooth;
+}
+
+body {
+	font-family: var(--font-sans);
+	/* font-family: Helvetica, sans-serif, sans-serif; */
+	overflow-x: hidden;
+	@apply bg-neutral-500 text-black-500;
+}
+
+.landing-container {
+	@apply max-w-[1500px] mx-auto px-4 sm:px-8 lg:px-10;
+}
+
+.custom-container {
+	@apply max-w-[2000px] mx-auto px-4 sm:px-[30px] lg:px-10;
+}
+
+.h2-auth {
+	@apply text-2xl font-bold md:text-3xl lg:text-[32px];
+}
+.h2-app {
+	@apply text-[22px] font-bold md:font-normal md:text-3xl lg:text-[36px];
+}
+
+.in-app-btn {
+	@apply w-fit min-w-[130px] sm:min-w-[200px] lg:min-w-[260px];
+}
+
+.invoice-shadow {
+	box-shadow: rgb(203, 203, 203, 0.5) 0px 7px 29px 0px;
+}
+
+.hide-scroll::-webkit-scrollbar {
+	display: none;
+	scrollbar-width: 1px;
+	scroll-behavior: smooth;
+	scrollbar-color: #18234f;
+}
+
+.scroll {
+	scrollbar-width: thin; /* auto | thin | none */
+	scrollbar-color: #d9e4f8 #18234f; /* thumb color and track color */
+}
+
+/* WebKit Browsers */
+.scroll::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+
+.scroll::-webkit-scrollbar-track {
+	background: white;
+	border-radius: 5px;
+}
+
+.scroll::-webkit-scrollbar-thumb {
+	background-color: black;
+	border-radius: 5px;
+	border: 2px solid white; /* optional: adds padding */
+}
+
+.scroll::-webkit-scrollbar-thumb:hover {
+	background-color: #555;
+}
+
+[data-sidebar="mobile"] {
+	border-top-right-radius: 20px !important;
+	border-bottom-right-radius: 20px !important;
+	overflow: hidden !important;
+}
+
+/* Spinner */
+.svg-loader {
+	animation: rotate 1s linear infinite;
+}
+
+.svg-loader .outer-ring {
+	transform-origin: 50px 50px; /* Center of the 100x100 viewBox */
+	animation: rotate 2s linear infinite;
+}
+
+.svg-loader .inner-ring {
+	transform-origin: 50px 50px; /* Center of the 100x100 viewBox */
+	animation: rotate 0.5s linear infinite reverse;
+}
+
+@keyframes rotate {
+	0% {
+		transform: rotate(0deg);
+	}
+	100% {
+		transform: rotate(360deg);
+	}
+}
+
+@theme inline {
+	--radius-sm: calc(var(--radius) - 4px);
+	--radius-md: calc(var(--radius) - 2px);
+	--radius-lg: var(--radius);
+	--radius-xl: calc(var(--radius) + 4px);
+	--color-background: var(--background);
+	--color-foreground: var(--foreground);
+	--color-card: var(--card);
+	--color-card-foreground: var(--card-foreground);
+	--color-popover: var(--popover);
+	--color-popover-foreground: var(--popover-foreground);
+	--color-primary: var(--primary);
+	--color-primary-foreground: var(--primary-foreground);
+	--color-secondary: var(--secondary);
+	--color-secondary-foreground: var(--secondary-foreground);
+	--color-muted: var(--muted);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-accent: var(--accent);
+	--color-accent-foreground: var(--accent-foreground);
+	--color-destructive: var(--destructive);
+	--color-border: var(--border);
+	--color-input: var(--input);
+	--color-ring: var(--ring);
+	--color-chart-1: var(--chart-1);
+	--color-chart-2: var(--chart-2);
+	--color-chart-3: var(--chart-3);
+	--color-chart-4: var(--chart-4);
+	--color-chart-5: var(--chart-5);
+	--color-sidebar: var(--sidebar);
+	--color-sidebar-foreground: var(--sidebar-foreground);
+	--color-sidebar-primary: var(--sidebar-primary);
+	--color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+	--color-sidebar-accent: var(--sidebar-accent);
+	--color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+	--color-sidebar-border: var(--sidebar-border);
+	--color-sidebar-ring: var(--sidebar-ring);
+}
+
+:root {
+	--radius: 0.625rem;
+	--card: oklch(1 0 0);
+	--card-foreground: oklch(0.145 0 0);
+	--popover: oklch(1 0 0);
+	--popover-foreground: oklch(0.145 0 0);
+	--primary: oklch(0.205 0 0);
+	--primary-foreground: oklch(0.985 0 0);
+	--secondary: oklch(0.97 0 0);
+	--secondary-foreground: oklch(0.205 0 0);
+	--muted: oklch(0.97 0 0);
+	--muted-foreground: oklch(0.556 0 0);
+	--accent: oklch(0.97 0 0);
+	--accent-foreground: oklch(0.205 0 0);
+	--destructive: oklch(0.577 0.245 27.325);
+	--border: oklch(0.922 0 0);
+	--input: oklch(0.922 0 0);
+	--ring: oklch(0.708 0 0);
+	--chart-1: oklch(0.646 0.222 41.116);
+	--chart-2: oklch(0.6 0.118 184.704);
+	--chart-3: oklch(0.398 0.07 227.392);
+	--chart-4: oklch(0.828 0.189 84.429);
+	--chart-5: oklch(0.769 0.188 70.08);
+	--sidebar: oklch(0.985 0 0);
+	--sidebar-foreground: oklch(0.145 0 0);
+	--sidebar-primary: oklch(0.205 0 0);
+	--sidebar-primary-foreground: oklch(0.985 0 0);
+	--sidebar-accent: oklch(0.97 0 0);
+	--sidebar-accent-foreground: oklch(0.205 0 0);
+	--sidebar-border: oklch(0.922 0 0);
+	--sidebar-ring: oklch(0.708 0 0);
+	--background: oklch(1 0 0);
+	--foreground: oklch(0.145 0 0);
+}
+
+.dark {
+	--background: oklch(0.145 0 0);
+	--foreground: oklch(0.985 0 0);
+	--card: oklch(0.205 0 0);
+	--card-foreground: oklch(0.985 0 0);
+	--popover: oklch(0.205 0 0);
+	--popover-foreground: oklch(0.985 0 0);
+	--primary: oklch(0.922 0 0);
+	--primary-foreground: oklch(0.205 0 0);
+	--secondary: oklch(0.269 0 0);
+	--secondary-foreground: oklch(0.985 0 0);
+	--muted: oklch(0.269 0 0);
+	--muted-foreground: oklch(0.708 0 0);
+	--accent: oklch(0.269 0 0);
+	--accent-foreground: oklch(0.985 0 0);
+	--destructive: oklch(0.704 0.191 22.216);
+	--border: oklch(1 0 0 / 10%);
+	--input: oklch(1 0 0 / 15%);
+	--ring: oklch(0.556 0 0);
+	--chart-1: oklch(0.488 0.243 264.376);
+	--chart-2: oklch(0.696 0.17 162.48);
+	--chart-3: oklch(0.769 0.188 70.08);
+	--chart-4: oklch(0.627 0.265 303.9);
+	--chart-5: oklch(0.645 0.246 16.439);
+	--sidebar: oklch(0.205 0 0);
+	--sidebar-foreground: oklch(0.985 0 0);
+	--sidebar-primary: oklch(0.488 0.243 264.376);
+	--sidebar-primary-foreground: oklch(0.985 0 0);
+	--sidebar-accent: oklch(0.269 0 0);
+	--sidebar-accent-foreground: oklch(0.985 0 0);
+	--sidebar-border: oklch(1 0 0 / 10%);
+	--sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+	* {
+		@apply border-border outline-ring/50;
+	}
+	body {
+		@apply bg-background text-foreground;
+	}
+}
+
+/* HTML: <div class="loader"></div> */
+.loader {
+	height: 5px;
+	border-radius: 30px;
+	width: 100%;
+	max-width: 200px;
+	--c: no-repeat linear-gradient(#000a2f 0 0);
+	/* background: var(--c), var(--c), #e6e6e6; */
+	background: var(--c), var(--c), #e6e6e6;
+	background-size: 60% 100%;
+	animation: l16 3s infinite;
+	margin: 0 auto;
+}
+@keyframes l16 {
+	0% {
+		background-position:
+			-150% 0,
+			-150% 0;
+	}
+	66% {
+		background-position:
+			250% 0,
+			-150% 0;
+	}
+	100% {
+		background-position:
+			250% 0,
+			250% 0;
+	}
+}
+
+/* ---------------------------------------------------------------------- */
+/* Motion. Calm and precise, for a payments product: short distances,     */
+/* soft deceleration, nothing that bounces or loops for show. Loops are    */
+/* kept for "we are waiting on the network" states only. Everything is     */
+/* off for prefers-reduced-motion.                                          */
+/*   .animate-rise   fade + 10px lift; stagger with style={{ "--i": n }}    */
+/*   .animate-page   route enter (the dashboard / admin template.tsx)       */
+/*   .animate-pop    a settled result (payment verified, copied)            */
+/*   .animate-signal soft ring around a live status (awaiting, verifying)   */
+/*   .animate-scan   indeterminate bar while a payment is being verified    */
+/*   .animate-check  draws an SVG check (stroke) once                       */
+/* ---------------------------------------------------------------------- */
+
+@theme {
+	--ease-settle: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes rise {
+	from {
+		opacity: 0;
+		transform: translateY(10px);
+	}
+	to {
+		opacity: 1;
+		transform: none;
+	}
+}
+
+@keyframes page-in {
+	from {
+		opacity: 0;
+		transform: translateY(6px);
+	}
+	to {
+		opacity: 1;
+		transform: none;
+	}
+}
+
+@keyframes pop {
+	0% {
+		opacity: 0;
+		transform: scale(0.94);
+	}
+	100% {
+		opacity: 1;
+		transform: scale(1);
+	}
+}
+
+@keyframes signal {
+	0% {
+		box-shadow: 0 0 0 0 color-mix(in oklab, currentColor 35%, transparent);
+	}
+	70%,
+	100% {
+		box-shadow: 0 0 0 10px color-mix(in oklab, currentColor 0%, transparent);
+	}
+}
+
+@keyframes scan {
+	from {
+		transform: translateX(-100%);
+	}
+	to {
+		transform: translateX(250%);
+	}
+}
+
+@keyframes check {
+	from {
+		stroke-dashoffset: 24;
+	}
+	to {
+		stroke-dashoffset: 0;
+	}
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	.animate-rise {
+		animation: rise 0.45s var(--ease-settle) both;
+		animation-delay: calc(var(--i, 0) * 55ms);
+	}
+
+	.animate-page {
+		animation: page-in 0.35s var(--ease-settle) both;
+	}
+
+	.animate-pop {
+		animation: pop 0.3s var(--ease-settle) both;
+	}
+
+	.animate-signal {
+		animation: signal 1.8s ease-out infinite;
+	}
+
+	.animate-scan {
+		animation: scan 1.4s ease-in-out infinite;
+	}
+
+	.animate-check {
+		stroke-dasharray: 24;
+		animation: check 0.45s 0.1s var(--ease-settle) both;
+	}
+
+	/* Radix dialogs, sheets and popovers already enter via tw-animate-css; give them the same curve. */
+	[data-state="open"][data-slot$="content"] {
+		animation-timing-function: var(--ease-settle);
+	}
+}
+
+/* ---------------------------------------------------------------------- */
+/* Scroll reveal (every app; driven by @repo/ui/scroll-reveal).            */
+/*   data-reveal="up|down|left|right|zoom|fade"  enters once, when seen    */
+/*   style={{ "--d": n }}                       stagger: n × 90 ms         */
+/*   data-progress → var(--progress) 0→1         e.g. a timeline that fills */
+/*   data-parallax="0.25"                        background drift           */
+/* Hidden only once JS has opted in (`reveal-ready` on <html>) and only    */
+/* with motion allowed, so content is never lost.                          */
+/* ---------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: no-preference) {
+	.reveal-ready [data-reveal] {
+		opacity: 0;
+		transition:
+			opacity 0.7s var(--ease-settle),
+			transform 0.85s var(--ease-settle),
+			filter 0.7s var(--ease-settle);
+		transition-delay: calc(var(--d, 0) * 90ms);
+	}
+
+	.reveal-ready [data-reveal="up"] {
+		transform: translate3d(0, 36px, 0);
+	}
+	.reveal-ready [data-reveal="down"] {
+		transform: translate3d(0, -24px, 0);
+	}
+	.reveal-ready [data-reveal="left"] {
+		transform: translate3d(-56px, 0, 0);
+	}
+	.reveal-ready [data-reveal="right"] {
+		transform: translate3d(56px, 0, 0);
+	}
+	.reveal-ready [data-reveal="zoom"] {
+		transform: scale(0.9);
+		filter: blur(6px);
+	}
+
+	.reveal-ready [data-reveal][data-revealed] {
+		opacity: 1;
+		transform: none;
+		filter: none;
+	}
+
+	/* Small screens: shorter travel, so sideways reveals never push past the edge. */
+	@media (max-width: 767px) {
+		.reveal-ready [data-reveal="left"] {
+			transform: translate3d(-24px, 0, 0);
+		}
+		.reveal-ready [data-reveal="right"] {
+			transform: translate3d(24px, 0, 0);
+		}
+	}
+
+	[data-parallax] {
+		will-change: transform;
+	}
+}
+
+/* Sideways reveals start off-canvas; `clip` (unlike `hidden`) keeps position: sticky working. */
+html,
+body {
+	overflow-x: clip;
+}

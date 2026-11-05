@@ -1,0 +1,108 @@
+@import "@repo/ui/globals.css";
+
+/* Let Tailwind scan the shared UI package for the utility classes it uses,
+   since those components live in a separate workspace package. */
+@source "../../../../packages/ui/src/**/*.{ts,tsx}";
+
+/* The admin console is dark (designs "admin page 1–8"). shadcn's variables are remapped so Radix primitives (dialog, sheet,
+   dropdown, popover) render dark without per-component overrides. */
+:root {
+	--background: #05070c;
+	--foreground: #ffffff;
+	--card: #131318;
+	--card-foreground: #ffffff;
+	--popover: #131318;
+	--popover-foreground: #ffffff;
+	--primary: #688cec;
+	--primary-foreground: #ffffff;
+	--secondary: #212121;
+	--secondary-foreground: #ffffff;
+	--muted: #212121;
+	--muted-foreground: rgb(255 255 255 / 0.6);
+	--accent: rgb(255 255 255 / 0.08);
+	--accent-foreground: #ffffff;
+	--border: rgb(255 255 255 / 0.1);
+	--input: rgb(255 255 255 / 0.35);
+	--ring: #688cec;
+	color-scheme: dark;
+}
+
+/* Unlayered on purpose: the shared stylesheet's `body` rule is unlayered too. */
+body {
+	background-color: var(--color-surface-900);
+	color: #ffffff;
+}
+
+/* Console content width: the design's main column (sidebar ~300px + content up to ~1180px). */
+@utility admin-container {
+	@apply mx-auto w-full max-w-[1240px] px-4 sm:px-6 lg:px-8;
+}
+
+/* Admin cards: design's 2px periwinkle-grey outline on the page background. */
+@utility admin-card {
+	@apply rounded-2xl border-2 border-[#2A2F45];
+}
+
+@utility skeleton-shimmer {
+	@apply relative overflow-hidden bg-white/[0.06];
+	&::after {
+		content: "";
+		position: absolute;
+		inset: 0;
+		transform: translateX(-100%);
+		background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.06), transparent);
+	}
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	.skeleton-shimmer::after {
+		animation: scan 1.6s ease-in-out infinite;
+	}
+}
+
+/* Brand loader: the logo mark breathing inside an orbiting ring (app/loading.tsx). */
+@keyframes orbit {
+	to {
+		transform: rotate(360deg);
+	}
+}
+@keyframes breathe {
+	0%,
+	100% {
+		transform: scale(1);
+		opacity: 1;
+	}
+	50% {
+		transform: scale(0.92);
+		opacity: 0.85;
+	}
+}
+@media (prefers-reduced-motion: no-preference) {
+	.animate-orbit {
+		animation: orbit 1.4s linear infinite;
+	}
+	.animate-breathe {
+		animation: breathe 1.8s ease-in-out infinite;
+	}
+}
+
+/* A wrong code: one short horizontal shake. */
+@keyframes shake {
+	0%,
+	100% {
+		transform: none;
+	}
+	20%,
+	60% {
+		transform: translateX(-6px);
+	}
+	40%,
+	80% {
+		transform: translateX(6px);
+	}
+}
+@media (prefers-reduced-motion: no-preference) {
+	.animate-shake {
+		animation: shake 0.4s ease-in-out;
+	}
+}
