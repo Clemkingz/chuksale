@@ -55,6 +55,17 @@ export function NotificationCard({
 				>
 					{notification.title}
 				</span>
+				{notification.body && (
+					// The admin's reason (rejections, change requests). Plain text, never HTML.
+					<span
+						className={cn(
+							"mt-2 block rounded-lg border-l-2 px-3 py-2 text-sm leading-6 break-words text-white/85",
+							tone === "bad" ? "border-error-300 bg-error-400/[0.08]" : "border-warning-300 bg-warning-400/[0.07]",
+						)}
+					>
+						<span className="sr-only">Reason: </span>“{notification.body}”
+					</span>
+				)}
 				<span className="mt-2 flex items-center gap-2.5 text-sm text-white/85 sm:mt-3 sm:text-base">
 					{notification.action && <span className="text-white group-hover:text-primary-300">{notification.action.label}</span>}
 					{notification.action && <span className="size-1.5 bg-white" aria-hidden />}

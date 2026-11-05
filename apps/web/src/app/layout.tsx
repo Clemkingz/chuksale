@@ -4,6 +4,7 @@ import { Toaster } from "@repo/ui/sonner";
 import { ReactQueryProvider } from "@/components/providers/ReactQueryProvider";
 import { USE_MOCK_API } from "@/lib/api/source";
 import { DemoControls } from "@/features/dev/DemoControls";
+import { MockSync } from "@/components/MockSync";
 import { ConnectWalletDialog } from "@/features/wallet/components/ConnectWalletDialog";
 import {
 	SHARE_DESCRIPTION,
@@ -69,6 +70,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
 					{/* Mounted once; opened from anywhere with useWalletDialog / useRequireWallet. */}
 					<ConnectWalletDialog />
 					{USE_MOCK_API && <DemoControls />}
+					{/* Mock mode: keeps web and admin demo data in step when they run on different origins. */}
+					{USE_MOCK_API && <MockSync />}
 					{/* Below the header, so toasts never cover the bell or wallet button. */}
 					<Toaster
 						position="top-right"

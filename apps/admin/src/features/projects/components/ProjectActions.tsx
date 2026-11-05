@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
 	CheckCircle2,
+	FileText,
 	ChevronDown,
 	Copy,
 	Eye,
@@ -33,6 +34,7 @@ import { notify } from "@/lib/notify";
 import { routes } from "@/lib/routes";
 import { WEB_URL } from "@/lib/site";
 import { useDecision, useFeature, useVisibility } from "@/features/projects/hooks";
+import { RejectProjectDialog, RejectionReasonDialog } from "@/features/projects/components/RejectionDialogs";
 
 /**
  * The review actions for one project: the table's "•••" (admin pages 2–3) and the detail page's "Action" button
@@ -59,6 +61,7 @@ export function ProjectActions({
 	showView?: boolean;
 }) {
 	const [dialog, setDialog] = useState<ReviewDecision | null>(null);
+	const [showReason, setShowReason] = useState(false);
 	const decision = useDecision();
 	const visibility = useVisibility();
 	const feature = useFeature();
@@ -159,6 +162,13 @@ export function ProjectActions({
 						</>
 					)}
 					<DropdownMenuSeparator className="bg-white/10" />
+					{(project.status === "rejected" || project.status === "changes_requested") &&
+						item(
+							"reason",
+							<FileText className="size-4 text-white/60" />,
+							project.status === "rejected" ? "View rejection reason" : "View requested changes",
+							() => setShowReason(true),
+						)}
 					{showView && (
 						<DropdownMenuItem asChild className="cursor-pointer gap-2.5 rounded-lg p-2.5 focus:bg-white/[0.06] focus:text-white">
 							<Link href={routes.project(project.id)}>
@@ -185,7 +195,12 @@ export function ProjectActions({
 				</DropdownMenuContent>
 			</DropdownMenu>
 
-			{dialog && <DecisionDialog key={dialog} project={project} decision={dialog} onClose={() => setDialog(null)} />}
+			{dialog === "reject" ? (
+				<RejectProjectDialog project={project} onClose={() => setDialog(null)} />
+			) : (
+				dialog && <DecisionDialog key={dialog} project={project} decision={dialog} onClose={() => setDialog(null)} />
+			)}
+			{showReason && <RejectionReasonDialog projectId={project.id} onClose={() => setShowReason(false)} />}
 		</>
 	);
 }

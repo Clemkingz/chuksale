@@ -56,6 +56,8 @@ export interface MockContribution extends Contribution {
 
 export interface MockDb {
 	version: number;
+	/** When this document was last written (ms). Newest wins when the apps sync (mock-sync). */
+	savedAt?: number;
 	seededAt: string;
 	users: MockUser[];
 	profiles: BuilderProfile[];
@@ -82,7 +84,7 @@ export interface MockDb {
 }
 
 const KEY = "csp-mock-db";
-const VERSION = 7;
+const VERSION = 8;
 
 let memory: MockDb | null = null;
 
@@ -110,14 +112,50 @@ function load(): MockDb {
 	return memory;
 }
 
-function save(db: MockDb) {
+type SaveListener = (raw: string) => void;
+const listeners = new Set<SaveListener>();
+
+/** Runs after every local write (not after imports), with the whole document. Used to mirror it to the other app. */
+export function onDbSaved(listener: SaveListener) {
+	listeners.add(listener);
+	return () => void listeners.delete(listener);
+}
+
+function save(db: MockDb, announce = true) {
+	if (announce) db.savedAt = Date.now();
 	memory = db;
+	const raw = JSON.stringify(db);
 	try {
-		storage()?.setItem(KEY, JSON.stringify(db));
+		storage()?.setItem(KEY, raw);
 	} catch {
 		// Private mode or quota: keep working from memory.
 	}
+	if (announce) listeners.forEach((l) => l(raw));
 }
+
+/** The whole document, for mirroring to the other app (mock-sync). */
+export function exportDb() {
+	return JSON.stringify(load());
+}
+
+/** Takes a mirrored document if it's the same version and newer than ours. Returns whether it replaced ours. */
+export function importDb(raw: string) {
+	try {
+		const doc = JSON.parse(raw) as MockDb;
+		if (doc.version !== VERSION) return false;
+		if ((doc.savedAt ?? 0) <= (load().savedAt ?? 0)) return false;
+		save(doc, false);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+// Another tab of this app (or, on one domain, the other app) wrote the data: drop the cached copy.
+if (typeof window !== "undefined")
+	window.addEventListener("storage", (e) => {
+		if (e.key === KEY) memory = null;
+	});
 
 /** A deep copy of the current data. */
 export function read(): MockDb {

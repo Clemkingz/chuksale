@@ -473,6 +473,8 @@ export interface Notification {
 	type: NotificationType;
 	category: NotificationCategory;
 	title: string;
+	/** Optional detail under the title, e.g. the reason an admin gave when rejecting a project. */
+	body?: string | null;
 	/** The call to action shown next to the time ("Contribute", "View receipt"). */
 	action: { label: string; href: string } | null;
 	payload: Record<string, unknown>;

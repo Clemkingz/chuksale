@@ -32,6 +32,7 @@ export function useBuilderProfile() {
 	const userId = useBuilderSession((s) => s.userId);
 	return useQuery({
 		queryKey: keys.profile(userId),
+		enabled: !!userId,
 		queryFn: async () => unwrap<BuilderProfileSummary>(await builderApi.get("/builder/profile")),
 		staleTime: 60_000,
 	});

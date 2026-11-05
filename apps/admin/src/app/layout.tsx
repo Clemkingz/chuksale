@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { Roboto } from "next/font/google";
 import { Toaster } from "@repo/ui/sonner";
 import { Providers } from "@/components/providers/Providers";
+import { MockSync } from "@/components/MockSync";
+import { USE_MOCK_API } from "@/lib/api/source";
 import { ScrollReveal, ScrollRevealScript } from "@repo/ui/scroll-reveal";
 import "./globals.css";
 
@@ -37,6 +39,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
 				<Providers>
 					{children}
 					<Toaster position="top-right" richColors />
+					{/* Mock mode: keeps admin and web demo data in step when they run on different origins. */}
+					{USE_MOCK_API && <MockSync />}
 				</Providers>
 			</body>
 		</html>

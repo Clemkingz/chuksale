@@ -1,4 +1,4 @@
-import type { AuditLog, Project, Suggestion } from "@repo/domain/types";
+import type { AuditLog, Project, ProjectReview, Suggestion } from "@repo/domain/types";
 import type { MockContribution, MockDb, MockNotification } from "./db";
 import { DAY, hex, iso, random, stellarAddress, uuid } from "./util";
 
@@ -294,8 +294,18 @@ export function buildSeed(version: number): MockDb {
 			type: "changes_requested",
 			category: "projects",
 			title: "Changes requested on Neighbourhood Tool Library",
-			action: { label: "Review feedback", href: `/builder/projects/${projects[4]!.id}` },
+			body: "Please add a short summary of how tools are stored and lent out, and the Stellar address that should receive contributions.",
+			action: { label: "See what to change", href: `/builder/projects/${projects[4]!.id}` },
 			created_at: at(1),
+		}),
+		note({
+			...forBuilder,
+			type: "project_rejected",
+			category: "projects",
+			title: "Plastic-Free Markets was rejected",
+			body: "We couldn’t verify the market partners named in the plan. You’re welcome to submit a new project with letters of support from at least two markets.",
+			action: { label: "See why", href: `/builder/projects/${projects.find((p) => p.slug === "plastic-free-markets")!.id}` },
+			created_at: at(0.3),
 		}),
 		note({
 			...forBuilder,
@@ -444,6 +454,48 @@ export function buildSeed(version: number): MockDb {
 		),
 	];
 
+	// Review records behind the seeded decisions: the builder sees `reason`, admins also see `internal_note`.
+	const bySlug = (slug: string) => projects.find((p) => p.slug === slug)!;
+	const review = (
+		slug: string,
+		decision: ProjectReview["decision"],
+		reason: string | null,
+		internal: string | null,
+		daysAgo: number,
+	): ProjectReview => ({
+		id: uuid(rand),
+		project_id: bySlug(slug).id,
+		admin_user_id: adminId,
+		decision,
+		reason,
+		internal_note: internal,
+		created_at: at(daysAgo),
+	});
+	const reviews: ProjectReview[] = [
+		review(
+			"neighbourhood-tool-library",
+			"request_changes",
+			"Please add a short summary of how tools are stored and lent out, and the Stellar address that should receive contributions.",
+			"Good idea, thin on details.",
+			1,
+		),
+		review(
+			"plastic-free-markets",
+			"reject",
+			"We couldn’t verify the market partners named in the plan. You’re welcome to submit a new project with letters of support from at least two markets.",
+			"Two of the named markets said they hadn’t heard of it.",
+			0.3,
+		),
+		review(
+			"token-launchpad",
+			"reject",
+			"Token sales and presales aren’t allowed on Chucksales (see the Terms of use).",
+			"Out of scope per PRD §2.",
+			8.5,
+		),
+		review("open-bus-times", "under_review", null, null, 1.2),
+	];
+
 	// Audit history for the seeded approvals (every admin action is audited, PRD §18).
 	const audit: AuditLog[] = projects
 		.filter((p) => p.approved_at)
@@ -537,7 +589,7 @@ export function buildSeed(version: number): MockDb {
 		],
 		projects,
 		revisions: [],
-		reviews: [],
+		reviews,
 		updates: [],
 		intents: [],
 		contributions,

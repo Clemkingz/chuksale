@@ -306,10 +306,23 @@ const DECISION_TO: Record<ReviewDecision, ProjectStatus> = {
 	reject: "rejected",
 };
 
-const BUILDER_NOTE: Partial<Record<ReviewDecision, (title: string) => Pick<Notification, "type" | "title">>> = {
-	approve: (t) => ({ type: "project_approved", title: `${t} was approved and is now public` }),
-	request_changes: (t) => ({ type: "changes_requested", title: `Changes requested on ${t}` }),
-	reject: (t) => ({ type: "project_rejected", title: `${t} wasn’t approved` }),
+/** What the builder sees in their notifications. Rejections and change requests carry the admin's reason. */
+const BUILDER_NOTE: Partial<
+	Record<ReviewDecision, (title: string, reason: string | null) => Pick<Notification, "type" | "title" | "body" | "action">>
+> = {
+	approve: (t) => ({
+		type: "project_approved",
+		title: `${t} was approved and is now public`,
+		body: null,
+		action: { label: "View project", href: "" },
+	}),
+	request_changes: (t, r) => ({
+		type: "changes_requested",
+		title: `Changes requested on ${t}`,
+		body: r,
+		action: { label: "See what to change", href: "" },
+	}),
+	reject: (t, r) => ({ type: "project_rejected", title: `${t} was rejected`, body: r, action: { label: "See why", href: "" } }),
 };
 
 route("POST", "/admin/projects/:id/decision", "admin", ({ params, body, user }) => {
@@ -348,7 +361,7 @@ route("POST", "/admin/projects/:id/decision", "admin", ({ params, body, user }) 
 			after_snapshot: { status: p.status, visibility: p.visibility, reason },
 			created_at: now,
 		});
-		const note = BUILDER_NOTE[decision]?.(p.title);
+		const note = BUILDER_NOTE[decision]?.(p.title, reason);
 		if (note)
 			db.notifications.push({
 				id: uuid(),
@@ -357,7 +370,8 @@ route("POST", "/admin/projects/:id/decision", "admin", ({ params, body, user }) 
 				broadcast: false,
 				...note,
 				category: "projects",
-				action: { label: "View dashboard", href: "/builder/dashboard" },
+				// Straight to the project's status page, where the reason and next steps are shown in full.
+				action: { label: note.action!.label, href: `/builder/projects/${p.id}` },
 				payload: { project_id: p.id, reason },
 				read_by: [],
 				created_at: now,

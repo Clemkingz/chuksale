@@ -16,6 +16,8 @@ import { Avatar, WalletDot } from "@/components/Avatar";
 import { EmptyState, ErrorState, Pager, RowsSkeleton, StatusPill } from "@/components/ui";
 import { useAdminProject, useProjectContributions } from "@/features/projects/hooks";
 import { ProjectActions } from "@/features/projects/components/ProjectActions";
+import { RejectionReasonDialog } from "@/features/projects/components/RejectionDialogs";
+import { Button } from "@repo/ui/button";
 
 /**
  * Design "admin page 4": banner, round logo, name, description, social handles, "Action" (review actions), then
@@ -46,6 +48,7 @@ function handle(label: string, url: string) {
 export function ProjectDetailView({ id }: { id: string }) {
 	const project = useAdminProject(id);
 	const [page, setPage] = useState(1);
+	const [showReason, setShowReason] = useState(false);
 	const contributions = useProjectContributions(id, page);
 	const p = project.data;
 
@@ -121,6 +124,33 @@ export function ProjectDetailView({ id }: { id: string }) {
 								<span className="rounded-full bg-primary-500/15 px-2.5 py-0.5 text-xs text-primary-200">Featured</span>
 							)}
 						</div>
+						{(p.status === "rejected" || p.status === "changes_requested") &&
+							(() => {
+								const r = p.reviews.find((x) => x.decision === (p.status === "rejected" ? "reject" : "request_changes"));
+								const rejected = p.status === "rejected";
+								return (
+									<div
+										role="note"
+										className={cn(
+											"animate-pop mt-4 flex flex-col gap-3 rounded-2xl border px-5 py-4 sm:flex-row sm:items-center sm:justify-between",
+											rejected ? "border-error-400/30 bg-error-400/[0.06]" : "border-warning-400/30 bg-warning-400/[0.06]",
+										)}
+									>
+										<div className="min-w-0">
+											<p className={cn("text-sm font-medium", rejected ? "text-error-200" : "text-warning-200")}>
+												{rejected ? "Rejected" : "Changes requested"}
+												{r ? ` · ${timeAgo(r.created_at)}` : ""}
+											</p>
+											<p className="mt-1 line-clamp-2 text-[15px] leading-6 break-words text-white/85">
+												{r?.reason ? `“${r.reason}”` : "No reason recorded."}
+											</p>
+										</div>
+										<Button variant="outline" size="sm" className="h-10 shrink-0 px-4" onClick={() => setShowReason(true)}>
+											View details
+										</Button>
+									</div>
+								);
+							})()}
 						<p className="animate-rise mt-2 max-w-[820px] text-base leading-7 text-white/90 [--i:2]">
 							{p.summary || (
 								<span className="text-white/45">No description yet. The builder’s submission only included the basics.</span>
@@ -306,6 +336,7 @@ export function ProjectDetailView({ id }: { id: string }) {
 					</section>
 				)}
 			</div>
+			{showReason && <RejectionReasonDialog projectId={id} onClose={() => setShowReason(false)} />}
 		</div>
 	);
 }

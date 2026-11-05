@@ -38,7 +38,7 @@ export function PreviewView({ id }: { id: string }) {
 	if (!q.data || !profile.data) return <div className="skeleton-shimmer h-[60vh]" aria-hidden />;
 	return (
 		<>
-			<div className="sticky top-[68px] z-20 border-b border-primary-500/30 bg-primary-500/15 backdrop-blur md:top-[90px]">
+			<div className="sticky top-16 z-20 border-b border-primary-500/30 bg-primary-500/15 backdrop-blur md:top-[72px]">
 				<div className="app-container flex flex-wrap items-center justify-between gap-3 py-2.5">
 					<p className="flex items-center gap-2 text-sm">
 						<Eye className="size-4 text-primary-300" /> Preview: this is how your project page will look once approved.
