@@ -1,30 +1,27 @@
 "use client";
 
-import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { useSyncExternalStore } from "react";
+import { accountTokens, api } from "@/lib/api/client";
 
-/** The admin's session: its own key, separate from the builder session in apps/web. */
-interface AdminSession {
-	token: string | null;
-	email: string | null;
-	name: string | null;
-	expiresAt: number | null;
-	signIn: (session: { token: string; email: string; name: string; expiresAt: number }) => void;
-	signOut: () => void;
+/**
+ * The admin's session is the token store (access token in memory, single-use refresh token in localStorage under
+ * the admin app's own key). Only `role: "admin"` tokens are kept; who is signed in comes from `GET /auth/me`.
+ */
+
+const subscribe = (cb: () => void) => accountTokens.subscribe(cb);
+
+/** true / false once mounted; null while server-rendering. */
+export function useAdminSignedIn(): boolean | null {
+	return useSyncExternalStore(
+		subscribe,
+		() => accountTokens.hasSession() && accountTokens.getRole() === "admin",
+		() => null,
+	);
 }
 
-export const useAdminSession = create<AdminSession>()(
-	persist(
-		(set) => ({
-			token: null,
-			email: null,
-			name: null,
-			expiresAt: null,
-			signIn: (session) => set(session),
-			signOut: () => set({ token: null, email: null, name: null, expiresAt: null }),
-		}),
-		{ name: "csp-admin-session" },
-	),
-);
-
-export const isExpired = (expiresAt: number | null) => !expiresAt || expiresAt <= Date.now();
+/** Signs out this device; the server revokes the session even if the call fails midway. */
+export async function signOut() {
+	const refreshToken = accountTokens.getRefreshToken();
+	accountTokens.clear();
+	if (refreshToken) await api.post("/auth/logout", { refreshToken }).catch(() => undefined);
+}

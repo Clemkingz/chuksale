@@ -1,73 +1,74 @@
 "use client";
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { AdminAccount, AdminNotificationPrefs, Paginated } from "@repo/domain/types";
+import type { AppNotification, Me, Page } from "@repo/domain/types";
 import { api, unwrap } from "@/lib/api/client";
-import { useAdminSession } from "@/features/auth/session";
+import { meKey } from "@/features/auth/hooks";
+import { signOut } from "@/features/auth/session";
 
-/** The signed-in admin's account (top bar + Account settings, designs "admin page 6–8"). */
+/** The signed-in admin's account: name (admins can change only that), password, sessions, inbox. */
 
-const KEY = ["admin", "account"] as const;
-
-export function useAdminAccount() {
-	return useQuery({
-		queryKey: KEY,
-		queryFn: async () => unwrap<AdminAccount>(await api.get("/admin/account")),
-		staleTime: 60_000,
-	});
-}
-
-export type AccountPatch = Partial<
-	Pick<AdminAccount, "first_name" | "last_name" | "phone" | "bio" | "country" | "city" | "postal_code" | "avatar_url">
->;
-
-export function useUpdateAccount() {
+export function useUpdateName() {
 	const qc = useQueryClient();
 	return useMutation({
-		mutationFn: async (patch: AccountPatch) => unwrap<AdminAccount>(await api.patch("/admin/account", patch)),
-		onSuccess: (account) => {
-			qc.setQueryData(KEY, account);
-			useAdminSession.setState({ name: `${account.first_name} ${account.last_name}`.trim() });
-		},
+		mutationFn: async (name: string) => unwrap<Me>(await api.patch("/auth/me", { name })),
+		onSuccess: (me) => qc.setQueryData(meKey, me),
 	});
 }
 
+/** A wrong current password is a 400 (never a refresh). Other sessions end; this one stays. */
 export function useChangePassword() {
 	return useMutation({
-		mutationFn: async (input: { current_password: string; new_password: string }) =>
-			unwrap<object>(await api.post("/admin/account/password", input)),
+		mutationFn: async (input: { currentPassword: string; newPassword: string }) => {
+			await api.post("/auth/change-password", input);
+		},
 	});
 }
 
-export function useUpdateNotificationPrefs() {
+export function useSignOutEverywhere() {
 	const qc = useQueryClient();
 	return useMutation({
-		mutationFn: async (patch: Partial<AdminNotificationPrefs>) =>
-			unwrap<AdminNotificationPrefs>(await api.patch("/admin/account/notifications", patch)),
-		// Optimistic: the switch moves at once and snaps back if the save fails.
-		onMutate: async (patch) => {
-			await qc.cancelQueries({ queryKey: KEY });
-			const before = qc.getQueryData<AdminAccount>(KEY);
-			if (before) qc.setQueryData(KEY, { ...before, notifications: { ...before.notifications, ...patch } });
-			return { before };
+		mutationFn: async () => {
+			await api.post("/auth/logout-all");
+			await signOut();
 		},
-		onError: (_e, _p, ctx) => ctx?.before && qc.setQueryData(KEY, ctx.before),
+		onSettled: () => qc.clear(),
 	});
 }
 
-export function useDeleteAccount() {
-	return useMutation({
-		mutationFn: async (password: string) => unwrap<object>(await api.delete("/admin/account", { data: { password } })),
-	});
-}
+export const INBOX_PAGE = 8;
 
-export type AdminFeedItem = { id: string; kind: string; title: string; body: string; href: string | null; created_at: string };
-
-/** Account settings → Notification: what needs the admin's attention, newest first. */
-export function useAdminNotifications(page: number) {
+/** The admin's in-app inbox (e.g. "review requested" when a builder submits). */
+export function useInbox(page: number) {
 	return useQuery({
-		queryKey: ["admin", "notifications", page],
-		queryFn: async () => unwrap<Paginated<AdminFeedItem>>(await api.get("/admin/notifications", { params: { page, limit: 6 } })),
+		queryKey: ["admin", "inbox", page],
+		queryFn: async () =>
+			unwrap<Page<AppNotification>>(await api.get("/notifications", { params: { limit: INBOX_PAGE, offset: (page - 1) * INBOX_PAGE } })),
 		placeholderData: keepPreviousData,
+	});
+}
+
+export function useInboxUnread() {
+	return useQuery({
+		queryKey: ["admin", "inbox", "unread"],
+		queryFn: async () => unwrap<{ count: number }>(await api.get("/notifications/unread-count")).count,
+		refetchInterval: 60_000,
+		refetchOnWindowFocus: true,
+	});
+}
+
+export function useMarkRead() {
+	const qc = useQueryClient();
+	return useMutation({
+		mutationFn: async (id: string) => unwrap<AppNotification>(await api.post(`/notifications/${id}/read`)),
+		onSettled: () => qc.invalidateQueries({ queryKey: ["admin", "inbox"] }),
+	});
+}
+
+export function useMarkAllRead() {
+	const qc = useQueryClient();
+	return useMutation({
+		mutationFn: async () => unwrap<{ updated: number }>(await api.post("/notifications/read-all")),
+		onSettled: () => qc.invalidateQueries({ queryKey: ["admin", "inbox"] }),
 	});
 }

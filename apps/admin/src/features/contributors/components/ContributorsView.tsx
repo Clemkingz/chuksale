@@ -2,140 +2,122 @@
 
 import { useState, type CSSProperties } from "react";
 import Link from "next/link";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Copy, UserCheck, UserMinus, UsersRound } from "lucide-react";
-import type { AdminContributor, Paginated } from "@repo/domain/types";
+import { useRouter } from "next/navigation";
+import { Search, UserCheck, UsersRound, Wallet } from "lucide-react";
+import { formatAmount } from "@repo/domain/money";
 import { cn } from "@repo/ui/lib/utils";
-import { api, unwrap } from "@/lib/api/client";
 import { errorMessage } from "@/lib/api/errors";
-import { fullDate, money, shortKey, timeAgo } from "@/lib/format";
-import { notify } from "@/lib/notify";
+import { fullDate, shortKey, timeAgo } from "@/lib/format";
+import { routes } from "@/lib/routes";
 import { WalletDot } from "@/components/Avatar";
 import { EmptyState, ErrorState, IconStat, PageTitle, Pager, RowsSkeleton } from "@/components/ui";
+import { useAdminContributions } from "@/features/monitor/hooks";
+import { groupByWallet } from "@/features/contributors/summary";
 
 /**
- * Design "admin page 5" ("User"). Contributors have no accounts (PRD §3.2): each row is a Stellar wallet with its
- * confirmed contributions. Stat cards: all contributors, active (contributed in the last 30 days) and inactive.
- * The design's "Disabled" card assumed blockable accounts, which the PRD doesn't have (D23).
- * Columns: wallet · total contributed · share of everything contributed · number of contributions.
+ * Design "admin page 5" ("User"). Contributors have no accounts: each row is a Stellar wallet, grouped from the
+ * latest confirmed contributions (the API has no contributor list). Look any wallet up by address.
  */
 
-type Page = Paginated<AdminContributor> & {
-	stats: { contributors: number; active: number; inactive: number; active_days: number };
-};
+const SAMPLE = 100;
+const PAGE = 8;
+const ACTIVE_DAYS = 30;
 
 export function ContributorsView() {
+	const router = useRouter();
 	const [page, setPage] = useState(1);
-	const q = useQuery({
-		queryKey: ["admin", "contributors", page],
-		queryFn: async () => unwrap<Page>(await api.get("/admin/contributors", { params: { page, limit: 6 } })),
-		placeholderData: keepPreviousData,
-	});
-	const d = q.data;
+	const [lookup, setLookup] = useState("");
+	const q = useAdminContributions({ status: "confirmed", limit: SAMPLE, offset: 0 });
+	const rows = q.data ? groupByWallet(q.data.result) : undefined;
+	const [since] = useState(() => new Date(Date.now() - ACTIVE_DAYS * 86_400_000).toISOString());
+	const active = rows?.filter((r) => r.lastAt >= since).length;
+	const pages = rows ? Math.max(1, Math.ceil(rows.length / PAGE)) : 1;
+	const sampled = q.data && q.data.paginationMeta.totalCount > SAMPLE;
 
 	return (
 		<div className="admin-container pt-2 md:pt-6">
 			<PageTitle>Contributors</PageTitle>
 
 			<ul className="mt-6 grid gap-4 sm:grid-cols-3 md:gap-7">
-				<IconStat i={0} icon={<UsersRound className="size-7" />} value={d?.stats.contributors} label="Contributors" />
-				<IconStat
-					i={1}
-					icon={<UserCheck className="size-7" />}
-					value={d?.stats.active}
-					label="Active"
-					hint={d ? `Contributed in the last ${d.stats.active_days} days` : undefined}
-				/>
-				<IconStat
-					i={2}
-					icon={<UserMinus className="size-7" />}
-					value={d?.stats.inactive}
-					label="Inactive"
-					hint={d ? `No contributions in ${d.stats.active_days} days` : undefined}
-				/>
+				<IconStat i={0} icon={<UsersRound className="size-7" />} value={rows?.length} label="Wallets" hint={sampled ? `From the latest ${SAMPLE} confirmed` : "With a confirmed contribution"} />
+				<IconStat i={1} icon={<UserCheck className="size-7" />} value={active} label="Active" hint={`Contributed in the last ${ACTIVE_DAYS} days`} />
+				<IconStat i={2} icon={<Wallet className="size-7" />} value={q.data?.paginationMeta.totalCount} label="Confirmed contributions" />
 			</ul>
 
-			<section data-reveal="up" aria-labelledby="contributors-title" className="admin-card mt-8 overflow-hidden md:mt-12">
-				<h2 id="contributors-title" className="px-5 py-6 font-display text-2xl font-bold text-primary-500 md:px-8 md:text-[32px]">
-					Contributors
+			<form
+				role="search"
+				onSubmit={(e) => {
+					e.preventDefault();
+					const a = lookup.trim().toUpperCase();
+					if (/^G[A-Z2-7]{55}$/.test(a)) router.push(routes.contributor(a));
+				}}
+				className="relative mt-8 max-w-[520px]"
+			>
+				<label htmlFor="wallet-lookup" className="sr-only">
+					Look up a wallet address
+				</label>
+				<Search className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-white/50" aria-hidden />
+				<input
+					id="wallet-lookup"
+					value={lookup}
+					onChange={(e) => setLookup(e.target.value)}
+					placeholder="Look up any wallet address (G…) and press Enter"
+					spellCheck={false}
+					className="h-11 w-full rounded-lg border border-white/15 bg-transparent pr-3 pl-10 font-mono text-sm outline-none focus:border-primary-500"
+				/>
+			</form>
+
+			<section data-reveal="up" aria-labelledby="contributors-title" className="admin-card mt-6 overflow-hidden">
+				<h2 id="contributors-title" className="px-5 py-6 font-display text-2xl font-bold text-primary-500 md:px-8">
+					Recent contributors
 				</h2>
 				{q.isPending ? (
 					<RowsSkeleton rows={6} cols={4} />
-				) : q.isError && !d ? (
+				) : q.isError && !rows ? (
 					<div className="p-4">
 						<ErrorState message={errorMessage(q.error)} onRetry={() => void q.refetch()} retrying={q.isFetching} />
 					</div>
-				) : d && d.items.length === 0 ? (
+				) : rows && rows.length === 0 ? (
 					<EmptyState title="No contributors yet" description="Wallets appear here after their first confirmed contribution." />
-				) : d ? (
-					<div className={cn("overflow-x-auto transition-opacity", q.isPlaceholderData && "opacity-60")}>
+				) : rows ? (
+					<div className="overflow-x-auto">
 						<table className="w-full min-w-[680px] text-left">
-							<thead className="border-t border-white/10 text-base md:text-lg">
+							<thead className="border-t border-white/10 text-base">
 								<tr>
-									<th scope="col" className="w-[34%] px-5 py-6 font-normal md:px-8">
-										Contributor
+									<th scope="col" className="w-[36%] px-5 py-5 font-normal md:px-8">
+										Wallet
 									</th>
-									<th scope="col" className="px-3 py-6 text-center font-normal">
-										Total amount
-										<br className="hidden md:block" /> contributed
+									<th scope="col" className="px-3 py-5 font-normal">
+										Contributed
 									</th>
-									<th
-										scope="col"
-										className="px-3 py-6 text-center font-normal"
-										title="Share of everything contributed on Chucksales"
-									>
-										Percentage of all
-										<br className="hidden md:block" /> contributions
-									</th>
-									<th scope="col" className="px-3 py-6 text-center font-normal">
+									<th scope="col" className="px-3 py-5 text-center font-normal">
 										Contributions
-										<br className="hidden md:block" /> made
+									</th>
+									<th scope="col" className="px-3 py-5 text-center font-normal">
+										Projects
+									</th>
+									<th scope="col" className="px-3 py-5 text-right font-normal md:pr-8">
+										Last
 									</th>
 								</tr>
 							</thead>
 							<tbody>
-								{d.items.map((c, i) => (
-									<tr
-										key={c.wallet_address}
-										data-reveal="up"
-										style={{ "--d": i } as CSSProperties}
-										className="border-t border-white/10 transition-colors hover:bg-white/[0.025]"
-									>
-										<td className="px-5 py-5 md:px-8">
-											<div className="flex items-center gap-3">
-												<WalletDot address={c.wallet_address} className="size-8 ring-0" />
-												<div className="min-w-0">
-													<Link
-														href={`/contributors/${c.wallet_address}`}
-														className="block font-mono text-[15px] hover:text-primary-300"
-														title={`${c.wallet_address}: view balance and funds sent`}
-													>
-														{shortKey(c.wallet_address, 10, 8)}
-													</Link>
-													<p className="text-xs text-white/45" title={fullDate(c.last_contributed_at)}>
-														Last: {timeAgo(c.last_contributed_at)} · {c.project_count} project{c.project_count === 1 ? "" : "s"}
-													</p>
-												</div>
-												<button
-													type="button"
-													aria-label={`Copy ${c.wallet_address}`}
-													onClick={async () => {
-														try {
-															await navigator.clipboard.writeText(c.wallet_address);
-															notify.success("Address copied");
-														} catch {
-															notify.error("Couldn’t copy");
-														}
-													}}
-													className="ml-1 flex size-8 shrink-0 items-center justify-center rounded-md text-white/45 hover:bg-white/10 hover:text-white"
-												>
-													<Copy className="size-3.5" />
-												</button>
-											</div>
+								{rows.slice((page - 1) * PAGE, page * PAGE).map((r, i) => (
+									<tr key={r.address} data-reveal="up" style={{ "--d": i } as CSSProperties} className="border-t border-white/10 hover:bg-white/[0.025]">
+										<td className="px-5 py-4 md:px-8">
+											<Link href={routes.contributor(r.address)} className="flex items-center gap-3 hover:text-primary-300">
+												<WalletDot address={r.address} className="size-9 ring-0" />
+												<span className="font-mono text-[15px]" title={r.address}>
+													{shortKey(r.address, 8, 6)}
+												</span>
+											</Link>
 										</td>
-										<td className="px-3 text-center text-base">{money(c.total_amount, c.asset_code)}</td>
-										<td className="px-3 text-center text-base tabular-nums">{c.share_percent}%</td>
-										<td className="px-3 text-center text-base tabular-nums">{c.contribution_count}</td>
+										<td className="px-3 tabular-nums">{r.totals.map((t) => `${formatAmount(t.amount)} ${t.asset.code}`).join(" · ")}</td>
+										<td className="px-3 text-center tabular-nums">{r.count}</td>
+										<td className="px-3 text-center tabular-nums">{r.projects}</td>
+										<td className="px-3 text-right md:pr-8" title={fullDate(r.lastAt)}>
+											{timeAgo(r.lastAt)}
+										</td>
 									</tr>
 								))}
 							</tbody>
@@ -143,7 +125,10 @@ export function ContributorsView() {
 					</div>
 				) : null}
 			</section>
-			{d && <Pager page={d.meta.page} pages={d.meta.total_pages} onPage={setPage} />}
+			{pages > 1 && <Pager page={page} pages={pages} onPage={setPage} />}
+			<p className={cn("mt-4 text-right text-xs text-white/40", !sampled && "hidden")}>
+				Grouped from the latest {SAMPLE} confirmed contributions. Look up older wallets by address.
+			</p>
 		</div>
 	);
 }

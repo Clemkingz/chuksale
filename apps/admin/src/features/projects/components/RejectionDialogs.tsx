@@ -5,10 +5,10 @@ import { Bell, CircleX, Lock, MessageSquareWarning } from "lucide-react";
 import { Button } from "@repo/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@repo/ui/dialog";
 import { cn } from "@repo/ui/lib/utils";
-import { errorData, errorMessage } from "@/lib/api/errors";
+import { detailsByField, errorMessage, errorStatus } from "@/lib/api/errors";
 import { fullDate, timeAgo } from "@/lib/format";
 import { notify } from "@/lib/notify";
-import { useAdminProject, useDecision } from "@/features/projects/hooks";
+import { useAdminProject, useProjectAction } from "@/features/projects/hooks";
 
 /**
  * Rejecting a project (FR-REV-03): pick why (one or more common reasons) and/or write it, add an optional internal
@@ -26,21 +26,21 @@ const COMMON_REASONS = [
 ];
 
 export function RejectProjectDialog({ project, onClose }: { project: { id: string; title: string }; onClose: () => void }) {
-	const save = useDecision();
+	const save = useProjectAction();
 	const [picked, setPicked] = useState<string[]>([]);
 	const [details, setDetails] = useState("");
 	const [note, setNote] = useState("");
 	const [touched, setTouched] = useState(false);
 	const reason = [...picked, details.trim()].filter(Boolean).join(" ");
 	const tooShort = reason.length < 10;
-	const serverError = errorData(save.error)?.field === "reason" ? errorMessage(save.error) : null;
+	const serverError = save.isError ? (detailsByField(save.error).reason ?? null) : null;
 
 	const toggle = (r: string) => setPicked((p) => (p.includes(r) ? p.filter((x) => x !== r) : [...p, r]));
 	const send = () => {
 		setTouched(true);
 		if (tooShort) return;
 		save.mutate(
-			{ id: project.id, decision: "reject", reason, internal_note: note.trim() || undefined },
+			{ id: project.id, action: "reject", reason, internalNote: note.trim() || undefined },
 			{
 				onSuccess: () => {
 					notify.success("Project rejected", `${project.title}: the builder has been notified with your reason.`);
@@ -160,7 +160,7 @@ export function RejectProjectDialog({ project, onClose }: { project: { id: strin
 
 				{save.isError && !serverError && (
 					<p className="rounded-lg border border-error-400/30 bg-error-400/10 px-3.5 py-2.5 text-sm text-error-100">
-						{errorMessage(save.error)}
+						{errorStatus(save.error) === 409 ? `${errorMessage(save.error)} Reload to see its current status.` : errorMessage(save.error)}
 					</p>
 				)}
 				<DialogFooter className="gap-2 sm:gap-2">
@@ -186,7 +186,8 @@ export function RejectProjectDialog({ project, onClose }: { project: { id: strin
 export function RejectionReasonDialog({ projectId, onClose }: { projectId: string; onClose: () => void }) {
 	const q = useAdminProject(projectId);
 	const p = q.data;
-	const review = p?.reviews.find((r) => r.decision === (p.status === "changes_requested" ? "request_changes" : "reject"));
+	const wanted = p?.status === "changes_requested" ? "request_changes" : p?.status === "archived" ? "archive" : "reject";
+	const review = p ? [...p.reviews].reverse().find((r) => r.action === wanted) : undefined;
 	const rejected = p?.status !== "changes_requested";
 	return (
 		<Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -202,7 +203,9 @@ export function RejectionReasonDialog({ projectId, onClose }: { projectId: strin
 							{rejected ? <CircleX className="size-5" aria-hidden /> : <MessageSquareWarning className="size-5" aria-hidden />}
 						</span>
 						<div className="min-w-0 text-left">
-							<DialogTitle className="font-display text-xl">{rejected ? "Why it was rejected" : "Changes requested"}</DialogTitle>
+							<DialogTitle className="font-display text-xl">
+								{p?.status === "archived" ? "Why it was archived" : rejected ? "Why it was rejected" : "Changes requested"}
+							</DialogTitle>
 							<DialogDescription className="truncate text-white/60">{p?.title ?? " "}</DialogDescription>
 						</div>
 					</div>
@@ -223,31 +226,31 @@ export function RejectionReasonDialog({ projectId, onClose }: { projectId: strin
 									rejected ? "border-error-300 bg-error-400/[0.08]" : "border-warning-300 bg-warning-400/[0.07]",
 								)}
 							>
-								“{review.reason}”
+								{review.reason ?? "No reason was given."}
 							</p>
 						</div>
-						{review.internal_note && (
+						{review.internalNote && (
 							<div>
 								<p className="flex items-center gap-1.5 text-xs text-white/50">
 									<Lock className="size-3" aria-hidden /> Internal note (admins only)
 								</p>
-								<p className="mt-1.5 text-sm leading-6 text-white/75">{review.internal_note}</p>
+								<p className="mt-1.5 text-sm leading-6 whitespace-pre-line text-white/75">{review.internalNote}</p>
 							</div>
 						)}
 						<dl className="grid grid-cols-2 gap-3 rounded-xl bg-white/[0.04] px-4 py-3 text-sm">
 							<div>
 								<dt className="text-xs text-white/50">Decided by</dt>
-								<dd className="mt-0.5">{review.admin_name}</dd>
+								<dd className="mt-0.5">{review.adminName ?? "An admin"}</dd>
 							</div>
 							<div>
 								<dt className="text-xs text-white/50">When</dt>
-								<dd className="mt-0.5" title={fullDate(review.created_at)}>
-									{timeAgo(review.created_at)}
+								<dd className="mt-0.5" title={fullDate(review.at)}>
+									{timeAgo(review.at)}
 								</dd>
 							</div>
 						</dl>
 						<p className="flex items-center gap-2 text-xs text-white/55">
-							<Bell className="size-3.5 text-primary-300" aria-hidden /> Sent to {p?.builder.name}’s notification bar.
+							<Bell className="size-3.5 text-primary-300" aria-hidden /> Sent to {p?.owner.displayName ?? p?.owner.name}’s notifications and email.
 						</p>
 					</div>
 				)}

@@ -3,7 +3,6 @@
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	type LucideIcon,
 	Bell,
@@ -22,12 +21,11 @@ import {
 } from "lucide-react";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@repo/ui/sheet";
 import { cn } from "@repo/ui/lib/utils";
-import { api, unwrap } from "@/lib/api/client";
 import { routes } from "@/lib/routes";
 import { Avatar } from "@/components/Avatar";
 import { Logo } from "@/components/Logo";
-import { useAdminAccount } from "@/features/account/hooks";
-import { useAdminSession } from "@/features/auth/session";
+import { useMe, useSignOut } from "@/features/auth/hooks";
+import { useOverview } from "@/features/overview/hooks";
 
 /**
  * Designs "admin page 1–8": fixed sidebar (Dashboard, Projects, Developers→Builders, User→Contributors, Settings,
@@ -39,12 +37,12 @@ import { useAdminSession } from "@/features/auth/session";
 const NAV = [
 	{ href: routes.overview, label: "Dashboard", icon: Layers },
 	{ href: routes.projects, label: "Projects", icon: FolderKanban },
-	{ href: routes.builders, label: "Builders", icon: UserRoundCog },
+	{ href: routes.builders, label: "Users", icon: UserRoundCog },
 	{ href: routes.contributors, label: "Contributors", icon: UsersRound },
 	{ href: routes.settings, label: "Settings", icon: Hexagon },
 ];
 const MORE = [
-	{ href: routes.suggestions, label: "Suggestions", icon: MessageSquareText },
+	{ href: routes.suggestions, label: "Suggestions & reports", icon: MessageSquareText },
 	{ href: routes.contributions, label: "Contributions", icon: Receipt },
 	{ href: routes.categories, label: "Categories", icon: Tags },
 	{ href: routes.auditLog, label: "Audit log", icon: FileClock },
@@ -57,8 +55,7 @@ function isActive(pathname: string, href: string) {
 function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
 	const pathname = usePathname();
 	const router = useRouter();
-	const qc = useQueryClient();
-	const signOut = useAdminSession((s) => s.signOut);
+	const signOut = useSignOut();
 
 	const item = (n: { href: string; label: string; icon: LucideIcon }, small = false) => {
 		const active = isActive(pathname, n.href);
@@ -97,8 +94,7 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
 			<button
 				type="button"
 				onClick={() => {
-					signOut();
-					qc.clear();
+					signOut.mutate();
 					onNavigate?.();
 					router.replace(routes.signIn);
 				}}
@@ -123,7 +119,7 @@ function TopSearch() {
 			className="group relative w-full max-w-[410px]"
 		>
 			<label htmlFor="console-search" className="sr-only">
-				Search projects, builders or wallets
+				Search projects by title or owner
 			</label>
 			<Search
 				className="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 text-white/60 transition-colors group-focus-within:text-primary-300"
@@ -141,18 +137,13 @@ function TopSearch() {
 	);
 }
 
-/** Bell: projects waiting for review (the admin's to-do), linking to that tab. */
+/** Bell: projects waiting for review (the admin's to-do, from `/admin/overview`), linking to the queue. */
 function ReviewBell() {
-	const pending = useQuery({
-		queryKey: ["admin", "projects", "pending-count"],
-		queryFn: async () =>
-			unwrap<{ meta: { total: number } }>(await api.get("/admin/projects", { params: { tab: "pending", limit: 1 } })).meta.total,
-		refetchInterval: 30_000,
-	});
-	const n = pending.data ?? 0;
+	const overview = useOverview();
+	const n = overview.data?.queue.projectsAwaitingReview ?? 0;
 	return (
 		<Link
-			href={`${routes.projects}?tab=pending`}
+			href={`${routes.projects}?tab=submitted`}
 			aria-label={n ? `${n} projects waiting for review` : "No projects waiting for review"}
 			className="relative flex size-11 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/15"
 		>
@@ -167,18 +158,17 @@ function ReviewBell() {
 }
 
 function Me() {
-	const account = useAdminAccount();
-	const { name, email } = useAdminSession();
-	const display = account.data ? `${account.data.first_name} ${account.data.last_name}`.trim() : (name ?? "Admin");
+	const me = useMe();
+	const display = me.data?.name ?? "Admin";
 	return (
 		<Link
 			href={routes.settings}
 			className="flex min-w-0 items-center gap-3 rounded-full transition-opacity hover:opacity-90 md:gap-4"
 		>
-			<Avatar name={display} src={account.data?.avatar_url} className="size-11 text-sm md:size-14 md:text-base" />
+			<Avatar name={display} className="size-11 text-sm md:size-14 md:text-base" />
 			<span className="hidden min-w-0 flex-col sm:flex">
 				<span className="truncate font-display text-lg font-bold md:text-xl">{display}</span>
-				<span className="truncate text-sm text-white/85">{account.data?.email ?? email}</span>
+				<span className="truncate text-sm text-white/85">{me.data?.email ?? " "}</span>
 			</span>
 		</Link>
 	);

@@ -3,12 +3,12 @@
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
+	Archive,
 	CheckCircle2,
-	FileText,
 	ChevronDown,
-	Copy,
 	Eye,
 	EyeOff,
+	FileText,
 	MessageSquareWarning,
 	MoreHorizontal,
 	SearchCheck,
@@ -16,8 +16,8 @@ import {
 	StarOff,
 	XCircle,
 } from "lucide-react";
-import { adminDecisions, isPubliclyVisible } from "@repo/domain/project-status";
-import type { AdminProjectListItem, ReviewDecision } from "@repo/domain/types";
+import { actionRequiresReason, availableActions, isPubliclyVisible } from "@repo/domain/project-status";
+import type { ProjectAction, ProjectStatus } from "@repo/domain/types";
 import { Button } from "@repo/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@repo/ui/dialog";
 import {
@@ -29,51 +29,56 @@ import {
 	DropdownMenuTrigger,
 } from "@repo/ui/dropdown-menu";
 import { cn } from "@repo/ui/lib/utils";
-import { errorData, errorMessage } from "@/lib/api/errors";
+import { detailsByField, errorMessage, errorStatus } from "@/lib/api/errors";
 import { notify } from "@/lib/notify";
 import { routes } from "@/lib/routes";
 import { WEB_URL } from "@/lib/site";
-import { useDecision, useFeature, useVisibility } from "@/features/projects/hooks";
+import { useProjectAction } from "@/features/projects/hooks";
 import { RejectProjectDialog, RejectionReasonDialog } from "@/features/projects/components/RejectionDialogs";
 
 /**
- * The review actions for one project: the table's "•••" (admin pages 2–3) and the detail page's "Action" button
- * (page 4). Only decisions the state machine allows are offered. Reject and Request changes need a reason the
- * builder will see (FR-REV-03); every action is audit-logged by the API.
+ * The actions for one project: the table's "•••" and the detail page's "Action" button. Only actions that fit the
+ * project's status are offered (the API answers 409 otherwise, e.g. when another admin acted first). Reject,
+ * request changes and archive need a reason the builder sees; every action is audit-logged by the API.
  */
 
-type Project = Pick<AdminProjectListItem, "id" | "title" | "slug" | "status" | "visibility" | "featured" | "destination_address">;
+type ActionTarget = { id: string; title: string; status: ProjectStatus; published: boolean; featured: boolean; slug?: string | null };
 
-const DECISION: Record<ReviewDecision, { label: string; icon: typeof CheckCircle2; tone?: string; done: string }> = {
-	under_review: { label: "Start review", icon: SearchCheck, done: "Marked as under review" },
-	approve: { label: "Approve and publish", icon: CheckCircle2, tone: "text-success-200", done: "Approved and published" },
-	request_changes: { label: "Request changes", icon: MessageSquareWarning, tone: "text-warning-200", done: "Changes requested" },
-	reject: { label: "Reject", icon: XCircle, tone: "text-error-200", done: "Project rejected" },
+const META: Record<ProjectAction, { label: string; icon: typeof CheckCircle2; tone?: string; done: string; group: "review" | "listing" | "other" }> = {
+	start_review: { label: "Start review", icon: SearchCheck, done: "Marked as under review", group: "review" },
+	approve: { label: "Approve and publish", icon: CheckCircle2, tone: "text-success-200", done: "Approved and published", group: "review" },
+	request_changes: { label: "Request changes", icon: MessageSquareWarning, tone: "text-warning-200", done: "Changes requested", group: "review" },
+	reject: { label: "Reject", icon: XCircle, tone: "text-error-200", done: "Project rejected", group: "review" },
+	publish: { label: "Publish", icon: Eye, done: "Published", group: "listing" },
+	unpublish: { label: "Unpublish (also unfeatures)", icon: EyeOff, done: "Hidden from the public", group: "listing" },
+	feature: { label: "Feature on the homepage", icon: Star, done: "Featured", group: "listing" },
+	unfeature: { label: "Remove from featured", icon: StarOff, done: "No longer featured", group: "listing" },
+	archive: { label: "Archive (final)", icon: Archive, tone: "text-error-200", done: "Archived", group: "other" },
 };
+
+/** Actions that change a lot get a confirmation dialog; the small ones run straight away. */
+const CONFIRM: ProjectAction[] = ["approve", "request_changes", "archive", "unpublish"];
 
 export function ProjectActions({
 	project,
 	variant = "menu",
 	showView = true,
 }: {
-	project: Project;
+	project: ActionTarget;
 	variant?: "menu" | "button";
 	showView?: boolean;
 }) {
-	const [dialog, setDialog] = useState<ReviewDecision | null>(null);
+	const [dialog, setDialog] = useState<ProjectAction | null>(null);
 	const [showReason, setShowReason] = useState(false);
-	const decision = useDecision();
-	const visibility = useVisibility();
-	const feature = useFeature();
-	const decisions = adminDecisions(project.status);
+	const act = useProjectAction();
+	const actions = availableActions(project);
 	const live = isPubliclyVisible(project);
 
-	const decide = (d: ReviewDecision) => {
-		// Start review needs no confirmation; the others open the dialog.
-		if (d !== "under_review") return setDialog(d);
-		decision.mutate(
-			{ id: project.id, decision: d },
-			{ onSuccess: () => notify.success(DECISION[d].done, project.title), onError: (e) => notify.fromError(e) },
+	const run = (a: ProjectAction) => {
+		if (a === "reject" || CONFIRM.includes(a)) return setDialog(a);
+		act.mutate(
+			{ id: project.id, action: a },
+			{ onSuccess: () => notify.success(META[a].done, project.title), onError: (e) => notify.fromError(e) },
 		);
 	};
 
@@ -87,6 +92,22 @@ export function ProjectActions({
 			{label}
 		</DropdownMenuItem>
 	);
+	const group = (g: "review" | "listing" | "other", title: string, first: boolean) => {
+		const list = actions.filter((a) => META[a].group === g);
+		if (!list.length) return null;
+		return (
+			<>
+				{!first && <DropdownMenuSeparator className="bg-white/10" />}
+				<DropdownMenuLabel className="px-2.5 pt-1.5 pb-1 text-xs font-normal tracking-wide text-white/45 uppercase">{title}</DropdownMenuLabel>
+				{list.map((a) => {
+					const Icon = META[a].icon;
+					return item(a, <Icon className="size-4" />, META[a].label, () => run(a), META[a].tone);
+				})}
+			</>
+		);
+	};
+	const hasReview = actions.some((a) => META[a].group === "review");
+	const hasListing = actions.some((a) => META[a].group === "listing");
 
 	return (
 		<>
@@ -102,8 +123,8 @@ export function ProjectActions({
 					<DropdownMenuTrigger asChild>
 						<Button
 							className="group h-12 w-full gap-2 text-base sm:w-[280px] lg:w-[320px]"
-							isLoading={decision.isPending}
-							loadingLabel="Saving decision"
+							isLoading={act.isPending}
+							loadingLabel="Saving"
 						>
 							Action
 							<ChevronDown className="size-4 transition-transform duration-200 group-data-[state=open]:rotate-180" />
@@ -113,60 +134,17 @@ export function ProjectActions({
 				<DropdownMenuContent
 					align="end"
 					sideOffset={6}
-					className="w-60 rounded-xl border-white/10 bg-[#131318] p-1.5 text-white shadow-xl shadow-black/40"
+					className="w-64 rounded-xl border-white/10 bg-[#131318] p-1.5 text-white shadow-xl shadow-black/40"
 				>
-					{decisions.length > 0 && (
-						<>
-							<DropdownMenuLabel className="px-2.5 pt-1.5 pb-1 text-xs font-normal tracking-wide text-white/45 uppercase">
-								Review
-							</DropdownMenuLabel>
-							{decisions.map((d) => {
-								const Icon = DECISION[d].icon;
-								return item(d, <Icon className="size-4" />, DECISION[d].label, () => decide(d), DECISION[d].tone);
-							})}
-						</>
-					)}
-					{project.status === "approved" && (
-						<>
-							{decisions.length > 0 && <DropdownMenuSeparator className="bg-white/10" />}
-							<DropdownMenuLabel className="px-2.5 pt-1.5 pb-1 text-xs font-normal tracking-wide text-white/45 uppercase">
-								Listing
-							</DropdownMenuLabel>
-							{item(
-								"visibility",
-								live ? <EyeOff className="size-4" /> : <Eye className="size-4" />,
-								live ? "Unpublish" : "Publish",
-								() =>
-									visibility.mutate(
-										{ id: project.id, visibility: live ? "unpublished" : "published" },
-										{
-											onSuccess: () => notify.success(live ? "Hidden from the public" : "Published", project.title),
-											onError: (e) => notify.fromError(e),
-										},
-									),
-							)}
-							{live &&
-								item(
-									"feature",
-									project.featured ? <StarOff className="size-4" /> : <Star className="size-4" />,
-									project.featured ? "Remove from featured" : "Feature on the homepage",
-									() =>
-										feature.mutate(
-											{ id: project.id, featured: !project.featured },
-											{
-												onSuccess: () => notify.success(project.featured ? "No longer featured" : "Featured", project.title),
-												onError: (e) => notify.fromError(e),
-											},
-										),
-								)}
-						</>
-					)}
-					<DropdownMenuSeparator className="bg-white/10" />
-					{(project.status === "rejected" || project.status === "changes_requested") &&
+					{group("review", "Review", true)}
+					{group("listing", "Listing", !hasReview)}
+					{group("other", "Other", !hasReview && !hasListing)}
+					{actions.length > 0 && <DropdownMenuSeparator className="bg-white/10" />}
+					{(project.status === "rejected" || project.status === "changes_requested" || project.status === "archived") &&
 						item(
 							"reason",
 							<FileText className="size-4 text-white/60" />,
-							project.status === "rejected" ? "View rejection reason" : "View requested changes",
+							project.status === "changes_requested" ? "View requested changes" : "View the reason",
 							() => setShowReason(true),
 						)}
 					{showView && (
@@ -176,121 +154,120 @@ export function ProjectActions({
 							</Link>
 						</DropdownMenuItem>
 					)}
-					{live && (
+					{live && project.slug && (
 						<DropdownMenuItem asChild className="cursor-pointer gap-2.5 rounded-lg p-2.5 focus:bg-white/[0.06] focus:text-white">
 							<a href={`${WEB_URL}/projects/${project.slug}`} target="_blank" rel="noopener noreferrer">
 								<Eye className="size-4 text-white/60" /> Open public page
 							</a>
 						</DropdownMenuItem>
 					)}
-					{project.destination_address &&
-						item("copy", <Copy className="size-4 text-white/60" />, "Copy wallet address", async () => {
-							try {
-								await navigator.clipboard.writeText(project.destination_address!);
-								notify.success("Address copied");
-							} catch {
-								notify.error("Couldn’t copy", "Select the address and copy it manually.");
-							}
-						})}
 				</DropdownMenuContent>
 			</DropdownMenu>
 
 			{dialog === "reject" ? (
 				<RejectProjectDialog project={project} onClose={() => setDialog(null)} />
 			) : (
-				dialog && <DecisionDialog key={dialog} project={project} decision={dialog} onClose={() => setDialog(null)} />
+				dialog && <ActionDialog key={dialog} project={project} action={dialog} onClose={() => setDialog(null)} />
 			)}
 			{showReason && <RejectionReasonDialog projectId={project.id} onClose={() => setShowReason(false)} />}
 		</>
 	);
 }
 
-function DecisionDialog({ project, decision: d, onClose }: { project: Project; decision: ReviewDecision; onClose: () => void }) {
-	const save = useDecision();
-	const needsReason = d === "reject" || d === "request_changes";
+const COPY: Partial<Record<ProjectAction, { title: (t: string) => string; body: string; cta: string; placeholder?: string }>> = {
+	approve: {
+		title: (t) => `Approve ${t}?`,
+		body: "It’s published straight away (a public link is set on first approval) and can receive contributions. The builder is notified.",
+		cta: "Approve and publish",
+	},
+	request_changes: {
+		title: () => "Request changes",
+		body: "The builder can edit and resubmit. They see your reason in their notifications and on the project.",
+		cta: "Send request",
+		placeholder: "What needs to change before approval.",
+	},
+	archive: {
+		title: (t) => `Archive ${t}?`,
+		body: "Archiving is final: the project leaves the platform. The builder sees your reason.",
+		cta: "Archive project",
+		placeholder: "Why the project is being archived.",
+	},
+	unpublish: {
+		title: (t) => `Unpublish ${t}?`,
+		body: "It disappears from public lists and its page (and is unfeatured). You can publish it again later.",
+		cta: "Unpublish",
+	},
+};
+
+function ActionDialog({ project, action: a, onClose }: { project: ActionTarget; action: ProjectAction; onClose: () => void }) {
+	const save = useProjectAction();
+	const needsReason = actionRequiresReason(a);
 	const [reason, setReason] = useState("");
 	const [note, setNote] = useState("");
 	const [touched, setTouched] = useState(false);
-	const reasonError =
-		needsReason && touched && reason.trim().length < 10 ? "Write at least 10 characters so the builder knows what to do." : null;
-
-	const copy: Record<ReviewDecision, { title: string; body: string; cta: string }> = {
-		under_review: { title: "", body: "", cta: "" },
-		approve: {
-			title: `Approve ${project.title}?`,
-			body: "It goes public straight away and can receive contributions. The builder is notified.",
-			cta: "Approve and publish",
-		},
-		request_changes: {
-			title: "Request changes",
-			body: "The builder can edit and resubmit. They’ll see your reason on their dashboard.",
-			cta: "Send request",
-		},
-		reject: {
-			title: `Reject ${project.title}?`,
-			body: "The project won’t be listed. The builder sees your reason. This can’t be undone from the console.",
-			cta: "Reject project",
-		},
-	};
-	const c = copy[d];
+	const reasonError = needsReason && touched && !reason.trim() ? "Write a reason the builder will see." : null;
+	const serverReason = save.isError ? detailsByField(save.error).reason : undefined;
+	const c = COPY[a] ?? { title: () => META[a].label, body: "", cta: META[a].label };
 
 	const submit = () => {
 		setTouched(true);
-		if (needsReason && reason.trim().length < 10) return;
+		if (needsReason && !reason.trim()) return;
 		save.mutate(
-			{ id: project.id, decision: d, reason: reason.trim() || undefined, internal_note: note.trim() || undefined },
+			{ id: project.id, action: a, reason: reason.trim() || undefined, internalNote: note.trim() || undefined },
 			{
 				onSuccess: () => {
-					notify.success(DECISION[d].done, project.title);
+					notify.success(META[a].done, project.title);
 					onClose();
 				},
 			},
 		);
 	};
 
-	const serverReason = errorData(save.error)?.field === "reason" ? errorMessage(save.error) : null;
-
 	return (
 		<Dialog open onOpenChange={(o) => !o && !save.isPending && onClose()}>
 			<DialogContent className="border-white/10 bg-[#11131C] text-white sm:max-w-[520px]">
 				<DialogHeader>
-					<DialogTitle className="font-display text-xl">{c.title}</DialogTitle>
-					<DialogDescription className="text-white/65">{c.body}</DialogDescription>
+					<DialogTitle className="font-display text-xl">{c.title(project.title)}</DialogTitle>
+					{c.body && <DialogDescription className="text-white/65">{c.body}</DialogDescription>}
 				</DialogHeader>
 				<div className="flex flex-col gap-4">
-					{needsReason && (
-						<div>
-							<label htmlFor="decision-reason" className="mb-2 block text-sm">
-								Reason for the builder <span className="text-error-200">*</span>
-							</label>
-							<textarea
-								id="decision-reason"
-								autoFocus
-								rows={4}
-								maxLength={1000}
-								value={reason}
-								onChange={(e) => setReason(e.target.value)}
-								onBlur={() => setTouched(true)}
-								aria-invalid={!!(reasonError || serverReason)}
-								placeholder={d === "reject" ? "Why this project can’t be listed." : "What needs to change before approval."}
-								className={cn(
-									"w-full resize-y rounded-lg border bg-transparent px-3.5 py-3 text-[15px] leading-6 outline-none placeholder:text-white/35 focus:ring-2 focus:ring-primary-500/30",
-									reasonError || serverReason ? "border-error-300" : "border-white/30 focus:border-primary-500",
-								)}
-							/>
-							{(reasonError || serverReason) && (
-								<p className="animate-rise mt-1.5 text-sm text-error-200">{reasonError ?? serverReason}</p>
-							)}
-						</div>
-					)}
 					<div>
-						<label htmlFor="decision-note" className="mb-2 block text-sm">
+						<label htmlFor="action-reason" className="mb-2 block text-sm">
+							{needsReason ? (
+								<>
+									Reason for the builder <span className="text-error-200">*</span>
+								</>
+							) : (
+								<>
+									Note for the builder <span className="text-white/45">(optional)</span>
+								</>
+							)}
+						</label>
+						<textarea
+							id="action-reason"
+							autoFocus={needsReason}
+							rows={needsReason ? 4 : 2}
+							maxLength={2000}
+							value={reason}
+							onChange={(e) => setReason(e.target.value)}
+							onBlur={() => setTouched(true)}
+							aria-invalid={!!(reasonError || serverReason)}
+							placeholder={c.placeholder}
+							className={cn(
+								"w-full resize-y rounded-lg border bg-transparent px-3.5 py-3 text-[15px] leading-6 outline-none placeholder:text-white/35 focus:ring-2 focus:ring-primary-500/30",
+								reasonError || serverReason ? "border-error-300" : "border-white/30 focus:border-primary-500",
+							)}
+						/>
+						{(reasonError || serverReason) && <p className="animate-rise mt-1.5 text-sm text-error-200">{reasonError ?? serverReason}</p>}
+					</div>
+					<div>
+						<label htmlFor="action-note" className="mb-2 block text-sm">
 							Internal note <span className="text-white/45">(optional, admins only)</span>
 						</label>
 						<textarea
-							id="decision-note"
+							id="action-note"
 							rows={2}
-							maxLength={1000}
+							maxLength={2000}
 							value={note}
 							onChange={(e) => setNote(e.target.value)}
 							className="w-full resize-y rounded-lg border border-white/20 bg-transparent px-3.5 py-3 text-[15px] leading-6 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30"
@@ -298,16 +275,17 @@ function DecisionDialog({ project, decision: d, onClose }: { project: Project; d
 					</div>
 					{save.isError && !serverReason && (
 						<p className="rounded-lg border border-error-400/30 bg-error-400/10 px-3.5 py-2.5 text-sm text-error-100">
-							{errorMessage(save.error)}
+							{errorStatus(save.error) === 409 ? `${errorMessage(save.error)} Reload to see its current status.` : errorMessage(save.error)}
 						</p>
 					)}
 				</div>
 				<DialogFooter className="gap-2 sm:gap-2">
-					<Button variant="ghost" onClick={onClose} disabled={save.isPending}>
+					<Button variant="ghost" className="w-auto px-5" onClick={onClose} disabled={save.isPending}>
 						Cancel
 					</Button>
 					<Button
-						variant={d === "reject" ? "destructive" : "default"}
+						variant={a === "archive" ? "destructive" : "default"}
+						className="w-auto px-5"
 						onClick={submit}
 						isLoading={save.isPending}
 						loadingLabel="Saving"

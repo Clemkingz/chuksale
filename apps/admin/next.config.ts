@@ -7,10 +7,11 @@ import type { NextConfig } from "next";
  */
 const BASE_PATH = process.env.BASE_PATH ?? (process.env.VERCEL ? "/admin" : "");
 
-/** The real API (once it exists). Mock mode never calls it: the axios adapter answers in the browser. */
-const API_ORIGIN = process.env.API_PROXY_TARGET || "http://localhost:8080/api/v1";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || `${BASE_PATH}/api/v1`;
+/**
+ * The ChuckSales API. The browser calls it directly (it rate-limits per client IP, so never proxy it through
+ * Next.js). Mock mode (NEXT_PUBLIC_API_SOURCE=mock) never calls it: the axios adapter answers in the browser.
+ */
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://chucksale-backend.onrender.com/api/v1";
 
 const nextConfig: NextConfig = {
 	basePath: BASE_PATH,
@@ -21,9 +22,6 @@ const nextConfig: NextConfig = {
 	reactCompiler: true,
 	transpilePackages: ["@repo/ui", "@repo/mock-api", "@repo/domain", "@repo/api"],
 	allowedDevOrigins: ["192.168.*.*", "10.*.*.*", "172.*.*.*"],
-	async rewrites() {
-		return [{ source: "/api/v1/:path*", destination: `${API_ORIGIN}/:path*` }];
-	},
 };
 
 export default nextConfig;

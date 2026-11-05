@@ -3,44 +3,56 @@
 import { useEffect, type CSSProperties } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { CalendarDays, SearchX, X } from "lucide-react";
-import type { AdminProjectTab } from "@repo/domain/project-status";
+import { ChevronDown, SearchX, X } from "lucide-react";
+import { PROJECT_STATUS_LABEL, PROJECT_TYPE_LABEL } from "@repo/domain/labels";
+import type { ProjectStatus } from "@repo/domain/types";
 import { cn } from "@repo/ui/lib/utils";
 import { errorMessage } from "@/lib/api/errors";
-import { money, shortKey, timeAgo, fullDate } from "@/lib/format";
+import { fullDate, timeAgo } from "@/lib/format";
 import { routes } from "@/lib/routes";
 import { Avatar } from "@/components/Avatar";
 import { EmptyState, ErrorState, PageTitle, Pager, RowsSkeleton, StatusPill, UnderlineTabs } from "@/components/ui";
-import { useAdminProjects, type ProjectFilters } from "@/features/projects/hooks";
+import { useAdminCategories } from "@/features/categories/hooks";
+import { PAGE_SIZE, useAdminProjects, useStatusCount, type ProjectFilters } from "@/features/projects/hooks";
 import { ProjectActions } from "@/features/projects/components/ProjectActions";
 
 /**
- * Designs "admin page 2–3": tabs (All / Completed / Pending / Cancelled), a "from – to" date range, and a table.
- * The design's columns describe contributions (wallet, token, amount); the PRD needs this page to be the review
- * queue, so each row is a project: name + its Stellar address (Wallet id), Token, Time added (submitted),
- * Amount contributed (confirmed, of target), Status and Action. Filters live in the URL.
+ * Designs "admin page 2–3", tailored to `GET /admin/projects`: one tab per status (Submitted is the review queue,
+ * oldest first), search by title or owner, category / listing / featured filters and sort. Drafts never reach
+ * admins. Filters live in the URL.
  */
 
-const TABS: { id: AdminProjectTab; label: string }[] = [
-	{ id: "all", label: "All projects" },
-	{ id: "completed", label: "Completed" },
-	{ id: "pending", label: "Pending" },
-	{ id: "cancelled", label: "Cancelled" },
+type Tab = ProjectStatus | "all";
+const STATUSES: ProjectStatus[] = ["submitted", "under_review", "changes_requested", "approved", "rejected", "archived"];
+const TABS: { id: Tab; label: string }[] = [
+	{ id: "all", label: "All" },
+	...STATUSES.map((s) => ({ id: s as Tab, label: PROJECT_STATUS_LABEL[s] })),
 ];
-const isTab = (v: string | null): v is AdminProjectTab => TABS.some((t) => t.id === v);
+const isTab = (v: string | null): v is Tab => TABS.some((t) => t.id === v);
+const QUEUE: Tab[] = ["submitted", "under_review"];
 
 export function ProjectsView() {
 	const router = useRouter();
 	const pathname = usePathname();
 	const params = useSearchParams();
+	const tab: Tab = isTab(params.get("tab")) ? (params.get("tab") as Tab) : "all";
+	const sortParam = params.get("sort");
 	const filters: ProjectFilters = {
-		tab: isTab(params.get("tab")) ? (params.get("tab") as AdminProjectTab) : "all",
+		status: tab === "all" ? "" : tab,
 		q: params.get("q") ?? "",
-		from: params.get("from") ?? "",
-		to: params.get("to") ?? "",
+		categoryId: params.get("category") ?? "",
+		published: params.get("published") === "true" ? "true" : params.get("published") === "false" ? "false" : "",
+		featured: params.get("featured") === "true" ? "true" : "",
+		// The queue reads oldest submission first; everything else most recently updated.
+		sort:
+			sortParam === "oldest_submitted" || sortParam === "recently_updated"
+				? sortParam
+				: QUEUE.includes(tab)
+					? "oldest_submitted"
+					: "recently_updated",
 		page: Math.max(1, Number(params.get("page")) || 1),
 	};
-	const set = (next: Partial<Record<keyof ProjectFilters, string | number | null>>) => {
+	const set = (next: Record<string, string | number | null>) => {
 		const sp = new URLSearchParams(params.toString());
 		for (const [k, v] of Object.entries(next)) {
 			if (v === null || v === "" || (k === "tab" && v === "all") || (k === "page" && v === 1)) sp.delete(k);
@@ -50,28 +62,75 @@ export function ProjectsView() {
 	};
 
 	const list = useAdminProjects(filters);
+	const categories = useAdminCategories();
+	const submitted = useStatusCount("submitted");
+	const underReview = useStatusCount("under_review");
 	const data = list.data;
-	const lastPage = data?.meta.total_pages;
+	const total = data?.paginationMeta.totalCount ?? 0;
+	const lastPage = data ? Math.max(1, Math.ceil(total / PAGE_SIZE)) : undefined;
 	useEffect(() => {
 		if (lastPage && filters.page > lastPage) set({ page: lastPage });
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [lastPage, filters.page]);
 
-	const filtered = !!(filters.q || filters.from || filters.to);
+	const filtered = !!(filters.q || filters.categoryId || filters.published || filters.featured);
+	const clear = { q: null, category: null, published: null, featured: null, page: 1 };
 
 	return (
 		<div className="admin-container pt-2 md:pt-6">
 			<PageTitle>Projects</PageTitle>
 
-			<div className="mt-6 flex flex-col gap-5 md:mt-9 xl:flex-row xl:items-end xl:justify-between">
+			<div className="mt-6 md:mt-9">
 				<UnderlineTabs
-					label="Filter projects"
+					label="Filter by status"
+					size="md"
 					tabs={TABS}
-					value={filters.tab}
-					counts={data?.counts}
-					onChange={(tab) => set({ tab, page: 1 })}
+					value={tab}
+					counts={{ submitted: submitted.data, under_review: underReview.data }}
+					onChange={(t) => set({ tab: t, page: 1, sort: null })}
 				/>
-				<DateRange from={filters.from} to={filters.to} onChange={(from, to) => set({ from, to, page: 1 })} />
+			</div>
+
+			<div className="mt-5 flex flex-wrap items-center gap-2">
+				<Select
+					label="Category"
+					value={filters.categoryId}
+					onChange={(v) => set({ category: v, page: 1 })}
+					options={[["", "All categories"], ...(categories.data?.map((c) => [c.id, c.isActive ? c.name : `${c.name} (inactive)`] as [string, string]) ?? [])]}
+				/>
+				<Select
+					label="Listing"
+					value={filters.published}
+					onChange={(v) => set({ published: v, page: 1 })}
+					options={[
+						["", "Listed or not"],
+						["true", "Listed publicly"],
+						["false", "Not listed"],
+					]}
+				/>
+				<Select
+					label="Featured"
+					value={filters.featured}
+					onChange={(v) => set({ featured: v, page: 1 })}
+					options={[
+						["", "Featured or not"],
+						["true", "Featured only"],
+					]}
+				/>
+				<Select
+					label="Sort"
+					value={filters.sort}
+					onChange={(v) => set({ sort: v, page: 1 })}
+					options={[
+						["oldest_submitted", "Oldest submission first"],
+						["recently_updated", "Recently updated"],
+					]}
+				/>
+				{filtered && (
+					<button type="button" onClick={() => set(clear)} className="ml-1 rounded-md px-2 py-1 text-sm text-primary-300 hover:bg-white/5">
+						Clear filters
+					</button>
+				)}
 			</div>
 
 			{filters.q && (
@@ -90,12 +149,9 @@ export function ProjectsView() {
 
 			<div
 				role="tabpanel"
-				aria-labelledby={`tab-${filters.tab}`}
+				aria-labelledby={`tab-${tab}`}
 				aria-busy={list.isFetching}
-				className={cn(
-					"admin-card mt-7 overflow-hidden transition-opacity duration-200 md:mt-10",
-					list.isPlaceholderData && "opacity-60",
-				)}
+				className={cn("admin-card mt-6 overflow-hidden transition-opacity duration-200 md:mt-8", list.isPlaceholderData && "opacity-60")}
 			>
 				{list.isPending ? (
 					<RowsSkeleton rows={7} cols={6} />
@@ -103,24 +159,14 @@ export function ProjectsView() {
 					<div className="p-4">
 						<ErrorState message={errorMessage(list.error)} onRetry={() => void list.refetch()} retrying={list.isFetching} />
 					</div>
-				) : data && data.items.length === 0 ? (
+				) : data && data.result.length === 0 ? (
 					<EmptyState
 						icon={filtered ? <SearchX className="size-6" aria-hidden /> : undefined}
-						title={
-							filtered
-								? "No projects match these filters"
-								: filters.tab === "pending"
-									? "Nothing waiting for review"
-									: "No projects here yet"
-						}
-						description={filtered ? "Try another search or widen the dates." : "Projects show up here once builders submit them."}
+						title={filtered ? "No projects match these filters" : tab === "submitted" ? "Nothing waiting for review" : "No projects here"}
+						description={filtered ? "Try another search or fewer filters." : "Projects show up here once builders submit them."}
 						action={
 							filtered ? (
-								<button
-									type="button"
-									onClick={() => set({ q: null, from: null, to: null, page: 1 })}
-									className="text-sm text-primary-300 hover:text-primary-200"
-								>
+								<button type="button" onClick={() => set(clear)} className="text-sm text-primary-300 hover:text-primary-200">
 									Clear filters
 								</button>
 							) : undefined
@@ -129,66 +175,60 @@ export function ProjectsView() {
 				) : data ? (
 					<>
 						<table className="hidden w-full table-fixed text-left lg:table">
-							<thead className="text-base md:text-lg">
+							<thead className="text-base">
 								<tr>
-									<th scope="col" className="w-[27%] px-6 py-6 font-normal">
-										Project / Wallet id
+									<th scope="col" className="w-[30%] px-6 py-5 font-normal">
+										Project
 									</th>
-									<th scope="col" className="w-[12%] px-3 py-6 font-normal">
-										Token
+									<th scope="col" className="w-[20%] px-3 py-5 font-normal">
+										Owner
 									</th>
-									<th scope="col" className="w-[14%] px-3 py-6 font-normal">
-										Time added
+									<th scope="col" className="w-[15%] px-3 py-5 font-normal">
+										Category
 									</th>
-									<th scope="col" className="w-[19%] px-3 py-6 font-normal">
-										Amount contributed
+									<th scope="col" className="w-[13%] px-3 py-5 font-normal">
+										Submitted
 									</th>
-									<th scope="col" className="w-[18%] px-3 py-6 font-normal">
+									<th scope="col" className="w-[15%] px-3 py-5 font-normal">
 										Status
 									</th>
-									<th scope="col" className="w-[10%] px-3 py-6 text-center font-normal">
-										Action
+									<th scope="col" className="w-[7%] px-3 py-5 text-center font-normal">
+										<span className="sr-only">Actions</span>
 									</th>
 								</tr>
 							</thead>
 							<tbody>
-								{data.items.map((p, i) => (
+								{data.result.map((p, i) => (
 									<tr
 										key={p.id}
 										data-reveal="up"
 										style={{ "--d": i } as CSSProperties}
 										className="border-t border-white/10 transition-colors hover:bg-white/[0.025]"
 									>
-										<td className="px-6 py-[18px]">
+										<td className="px-6 py-4">
 											<div className="flex min-w-0 items-center gap-3">
-												<Avatar name={p.title} src={p.logo_url} className="size-10 text-xs" />
+												<Avatar name={p.title} className="size-10 text-xs" />
 												<div className="min-w-0">
 													<Link href={routes.project(p.id)} className="block truncate text-base hover:text-primary-300">
 														{p.title}
 													</Link>
-													<p className="truncate font-mono text-[13px] text-white/55" title={p.destination_address ?? undefined}>
-														{p.destination_address ? shortKey(p.destination_address, 8, 6) : `by ${p.builder.name}`}
+													<p className="truncate text-[13px] text-white/50">
+														{PROJECT_TYPE_LABEL[p.type]} · revision {p.revision}
 													</p>
 												</div>
 											</div>
 										</td>
 										<td className="px-3">
-											<Token code={p.target_asset?.code} />
+											<p className="truncate">{p.owner.displayName ?? p.owner.name}</p>
+											<p className="truncate text-[13px] text-white/50">{p.owner.email}</p>
 										</td>
-										<td className="px-3 text-base" title={p.submitted_at ? fullDate(p.submitted_at) : undefined}>
-											{p.submitted_at ? timeAgo(p.submitted_at) : "—"}
-										</td>
-										<td className="px-3 text-base">
-											{money(p.raised_amount, p.target_asset?.code)}
-											{p.target_amount && (
-												<span className="block text-xs text-white/50">of {money(p.target_amount, p.target_asset?.code)}</span>
-											)}
+										<td className="truncate px-3 text-white/85">{p.category?.name ?? "—"}</td>
+										<td className="px-3" title={p.submittedAt ? fullDate(p.submittedAt) : undefined}>
+											{p.submittedAt ? timeAgo(p.submittedAt) : "—"}
 										</td>
 										<td className="px-3">
 											<StatusPill status={p.status} />
-											{p.status === "approved" && p.visibility === "unpublished" && (
-												<span className="mt-0.5 block text-xs text-white/50">Hidden from public</span>
-											)}
+											{p.status === "approved" && !p.published && <span className="mt-0.5 block text-xs text-white/50">Not listed</span>}
 											{p.featured && <span className="mt-0.5 block text-xs text-primary-300">Featured</span>}
 										</td>
 										<td className="px-3 text-center">
@@ -200,31 +240,23 @@ export function ProjectsView() {
 						</table>
 
 						<ul className="divide-y divide-white/10 lg:hidden">
-							{data.items.map((p, i) => (
-								<li
-									key={p.id}
-									data-reveal="up"
-									style={{ "--d": i } as CSSProperties}
-									className="flex flex-col gap-3 px-4 py-4 sm:px-5"
-								>
+							{data.result.map((p, i) => (
+								<li key={p.id} data-reveal="up" style={{ "--d": i } as CSSProperties} className="flex flex-col gap-3 px-4 py-4 sm:px-5">
 									<div className="flex items-start gap-3">
-										<Avatar name={p.title} src={p.logo_url} className="size-11 text-xs" />
+										<Avatar name={p.title} className="size-11 text-xs" />
 										<div className="min-w-0 flex-1">
 											<Link href={routes.project(p.id)} className="block truncate font-medium">
 												{p.title}
 											</Link>
-											<p className="truncate text-sm text-white/55">by {p.builder.name}</p>
+											<p className="truncate text-sm text-white/55">by {p.owner.displayName ?? p.owner.name}</p>
 										</div>
 										<ProjectActions project={p} />
 									</div>
 									<div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-sm">
 										<StatusPill status={p.status} className="text-sm" />
-										<span>{money(p.raised_amount, p.target_asset?.code)}</span>
-										<span className="text-white/60">{p.submitted_at ? timeAgo(p.submitted_at) : "—"}</span>
+										<span className="text-white/70">{p.category?.name ?? "No category"}</span>
+										<span className="text-white/60">{p.submittedAt ? timeAgo(p.submittedAt) : "—"}</span>
 									</div>
-									{p.destination_address && (
-										<p className="truncate font-mono text-xs text-white/45">{shortKey(p.destination_address, 10, 8)}</p>
-									)}
 								</li>
 							))}
 						</ul>
@@ -232,69 +264,37 @@ export function ProjectsView() {
 				) : null}
 			</div>
 
-			{data && <Pager page={data.meta.page} pages={data.meta.total_pages} onPage={(page) => set({ page })} />}
+			{data && lastPage && lastPage > 1 && <Pager page={filters.page} pages={lastPage} onPage={(page) => set({ page })} />}
 		</div>
 	);
 }
 
-/** Design: white circle + token code. Stellar assets get their own mark colour. */
-function Token({ code }: { code?: string }) {
-	if (!code) return <span className="text-white/40">—</span>;
-	return (
-		<span className="inline-flex items-center gap-2.5 text-base">
-			<span
-				aria-hidden
-				className={cn(
-					"flex size-9 items-center justify-center rounded-full text-[10px] font-bold",
-					code === "USDC" ? "bg-[#2775CA] text-white" : "bg-white text-black",
-				)}
-			>
-				{code === "USDC" ? "$" : "✦"}
-			</span>
-			{code}
-		</span>
-	);
-}
-
-/** Design: "📅 16-05-2024 to 📅 16-05-2024". Native date pickers (keyboard + mobile friendly). */
-function DateRange({
-	from,
-	to,
+function Select({
+	label,
+	value,
 	onChange,
+	options,
 }: {
-	from: string;
-	to: string;
-	onChange: (from: string | null, to: string | null) => void;
+	label: string;
+	value: string;
+	onChange: (v: string) => void;
+	options: [string, string][];
 }) {
-	const today = new Date().toISOString().slice(0, 10);
-	const input = (value: string, label: string, set: (v: string) => void, min?: string, max?: string) => (
-		<label className="relative inline-flex items-center">
-			<span className="sr-only">{label}</span>
-			<CalendarDays className="pointer-events-none absolute left-2.5 size-5 text-white/80" aria-hidden />
-			<input
-				type="date"
-				value={value}
-				min={min}
-				max={max ?? today}
-				onChange={(e) => set(e.target.value)}
-				className="h-10 rounded-lg border border-white/15 bg-transparent pr-2 pl-9 text-[15px] text-white outline-none [color-scheme:dark] hover:border-white/30 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30"
-			/>
-		</label>
-	);
 	return (
-		<div className="flex flex-wrap items-center gap-2 text-base text-white/85">
-			{input(from, "From date", (v) => onChange(v || null, to || null), undefined, to || undefined)}
-			<span>to</span>
-			{input(to, "To date", (v) => onChange(from || null, v || null), from || undefined)}
-			{(from || to) && (
-				<button
-					type="button"
-					onClick={() => onChange(null, null)}
-					className="animate-pop ml-1 rounded-md px-2 py-1 text-sm text-primary-300 hover:bg-white/5"
-				>
-					Clear
-				</button>
-			)}
-		</div>
+		<label className="relative block min-w-0">
+			<span className="sr-only">{label}</span>
+			<select
+				value={value}
+				onChange={(e) => onChange(e.target.value)}
+				className="h-10 max-w-[220px] cursor-pointer appearance-none truncate rounded-lg border border-white/15 bg-transparent pr-8 pl-3 text-sm text-white outline-none hover:border-white/30 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30"
+			>
+				{options.map(([v, l]) => (
+					<option key={v} value={v} className="bg-[#131318]">
+						{l}
+					</option>
+				))}
+			</select>
+			<ChevronDown className="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-white/60" aria-hidden />
+		</label>
 	);
 }

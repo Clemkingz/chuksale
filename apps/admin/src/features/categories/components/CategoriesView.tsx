@@ -1,40 +1,24 @@
 "use client";
 
 import { useState, type CSSProperties } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Pencil, Plus, X } from "lucide-react";
-import type { Category } from "@repo/domain/types";
 import { Button } from "@repo/ui/button";
 import { cn } from "@repo/ui/lib/utils";
-import { api, unwrap } from "@/lib/api/client";
 import { errorMessage } from "@/lib/api/errors";
 import { notify } from "@/lib/notify";
 import { inputClass } from "@/components/forms/Field";
 import { EmptyState, ErrorState, PageTitle, RowsSkeleton } from "@/components/ui";
+import { useAdminCategories, useCreateCategory, useUpdateCategory } from "@/features/categories/hooks";
 
 /**
- * /categories (PRD P1): add, rename and switch categories on/off. Renaming keeps the slug so links keep working;
- * an inactive category disappears from filters and new submissions but existing projects keep it. Audit-logged.
+ * /categories: add, rename and switch categories on/off (they're never deleted). Renaming keeps the slug so links
+ * keep working; an inactive category disappears from filters and new submissions but existing projects keep it.
  */
 
-type Row = Category & { project_count: number };
-
 export function CategoriesView() {
-	const qc = useQueryClient();
-	const q = useQuery({
-		queryKey: ["admin", "categories"],
-		queryFn: async () => unwrap<Row[]>(await api.get("/admin/categories")),
-	});
-	const invalidate = () => qc.invalidateQueries({ queryKey: ["admin", "categories"] });
-	const add = useMutation({
-		mutationFn: async (name: string) => unwrap<Category>(await api.post("/admin/categories", { name })),
-		onSuccess: invalidate,
-	});
-	const patch = useMutation({
-		mutationFn: async (v: { id: string; name?: string; is_active?: boolean }) =>
-			unwrap<Category>(await api.patch(`/admin/categories/${v.id}`, v)),
-		onSuccess: invalidate,
-	});
+	const q = useAdminCategories();
+	const add = useCreateCategory();
+	const patch = useUpdateCategory();
 	const [name, setName] = useState("");
 	const [editing, setEditing] = useState<{ id: string; name: string } | null>(null);
 
@@ -48,7 +32,7 @@ export function CategoriesView() {
 				onSubmit={(e) => {
 					e.preventDefault();
 					if (name.trim().length < 2) return;
-					add.mutate(name.trim(), {
+					add.mutate({ name: name.trim() }, {
 						onSuccess: (c) => {
 							notify.success("Category added", c.name);
 							setName("");
@@ -61,7 +45,7 @@ export function CategoriesView() {
 					<input
 						value={name}
 						onChange={(e) => setName(e.target.value)}
-						maxLength={40}
+						maxLength={60}
 						placeholder="New category, e.g. Health"
 						className={inputClass(add.isError)}
 					/>
@@ -114,7 +98,7 @@ export function CategoriesView() {
 											autoFocus
 											value={editing.name}
 											onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-											maxLength={40}
+											maxLength={60}
 											aria-label="Category name"
 											className={cn(inputClass(false), "h-10")}
 										/>
@@ -140,9 +124,9 @@ export function CategoriesView() {
 									</form>
 								) : (
 									<div className="min-w-0 flex-1">
-										<p className={cn("text-lg", !c.is_active && "text-white/45")}>{c.name}</p>
+										<p className={cn("text-lg", !c.isActive && "text-white/45")}>{c.name}</p>
 										<p className="text-xs text-white/45">
-											/{c.slug} · {c.project_count} project{c.project_count === 1 ? "" : "s"}
+											/{c.slug} · {c.projectCount} project{c.projectCount === 1 ? "" : "s"}
 										</p>
 									</div>
 								)}
@@ -159,27 +143,27 @@ export function CategoriesView() {
 										<button
 											type="button"
 											role="switch"
-											aria-checked={c.is_active}
-											aria-label={`${c.name} is ${c.is_active ? "active" : "inactive"}`}
+											aria-checked={c.isActive}
+											aria-label={`${c.name} is ${c.isActive ? "active" : "inactive"}`}
 											onClick={() =>
 												patch.mutate(
-													{ id: c.id, is_active: !c.is_active },
+													{ id: c.id, isActive: !c.isActive },
 													{
 														onSuccess: () =>
-															notify.success(c.is_active ? "Category switched off" : "Category switched on", c.name),
+															notify.success(c.isActive ? "Category switched off" : "Category switched on", c.name),
 														onError: (e) => notify.fromError(e),
 													},
 												)
 											}
 											className={cn(
 												"relative h-7 w-12 rounded-full transition-colors",
-												c.is_active ? "bg-primary-500" : "bg-white/20",
+												c.isActive ? "bg-primary-500" : "bg-white/20",
 											)}
 										>
 											<span
 												className={cn(
 													"absolute top-1 left-1 size-5 rounded-full bg-white shadow transition-transform duration-200",
-													c.is_active && "translate-x-5",
+													c.isActive && "translate-x-5",
 												)}
 											/>
 										</button>

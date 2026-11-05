@@ -2,30 +2,37 @@
 
 import { useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
-import { ChevronRight, ClipboardList, HandCoins, UserRound, UsersRound } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ClipboardList, Clock, Flag, MessageSquareText, XCircle } from "lucide-react";
+import { PROJECT_ACTION_LABEL } from "@repo/domain/labels";
 import { CountUp } from "@repo/ui/count-up";
 import { cn } from "@repo/ui/lib/utils";
 import { errorMessage } from "@/lib/api/errors";
-import { compact, money } from "@/lib/format";
+import { fullDate, timeAgo } from "@/lib/format";
 import { routes } from "@/lib/routes";
-import { Avatar, WalletDot } from "@/components/Avatar";
-import { EmptyState, ErrorState, PageTitle, RowsSkeleton, StatusPill } from "@/components/ui";
-import { useOverview, type OverviewRange } from "@/features/overview/hooks";
-import { FundingChart, ProgressDonut } from "@/features/overview/components/Charts";
+import { EmptyState, ErrorState, PageTitle, RowsSkeleton } from "@/components/ui";
+import { rate, useAnalytics, useOverview, type AnalyticsRange } from "@/features/overview/hooks";
+import { FunnelChart } from "@/features/overview/components/Charts";
 
 /**
- * Design "admin page 1": four stat cards, "Contributions this week" (Funding Report bars + total), "Project
- * Analysis" donut, Recent projects and Trending projects. Tailored to the PRD: amounts are confirmed Stellar
- * contributions in XLM; bars are days (or weeks), not tokens; "Developers" are builders.
+ * Admin home, tailored to `/admin/overview` and `/admin/analytics`: the work queues (each links to its queue),
+ * payment alerts (stuck, and the last 24 h), the PRD success measures for a chosen period with two funnels, and the
+ * latest review decisions.
  */
 
-const RANGE_TITLE: Record<OverviewRange, string> = { week: "this week", month: "this month", quarter: "in the last 3 months" };
 const d = (i: number) => ({ "--d": i }) as CSSProperties;
+const RANGES: { id: AnalyticsRange; label: string }[] = [
+	{ id: 7, label: "7 days" },
+	{ id: 30, label: "30 days" },
+	{ id: 90, label: "90 days" },
+];
 
 export function OverviewView() {
-	const [range, setRange] = useState<OverviewRange>("week");
-	const overview = useOverview(range);
+	const overview = useOverview();
 	const o = overview.data;
+	const [days, setDays] = useState<AnalyticsRange>(30);
+	const analytics = useAnalytics(days);
+	const a = analytics.data;
+	const m = a?.metrics;
 
 	return (
 		<div className="admin-container pt-2 md:pt-6">
@@ -33,196 +40,276 @@ export function OverviewView() {
 
 			{overview.isError && !o ? (
 				<div className="mt-8">
-					<ErrorState
-						message={errorMessage(overview.error)}
-						onRetry={() => void overview.refetch()}
-						retrying={overview.isFetching}
-					/>
+					<ErrorState message={errorMessage(overview.error)} onRetry={() => void overview.refetch()} retrying={overview.isFetching} />
 				</div>
 			) : (
 				<>
+					<h2 className="sr-only">Queues</h2>
 					<ul className="mt-4 grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 xl:grid-cols-4 xl:gap-7">
-						<Stat i={0} icon={<UsersRound className="size-11" />} label="Contributors" value={o?.stats.contributors} />
-						<Stat i={1} icon={<UserRound className="size-11" />} label="Builders" value={o?.stats.builders} />
-						<Stat i={2} icon={<ClipboardList className="size-11" />} label="Projects" value={o?.stats.projects} />
+						<Stat
+							i={0}
+							href={`${routes.projects}?tab=submitted`}
+							icon={<ClipboardList className="size-11" />}
+							label="Projects awaiting review"
+							value={o?.queue.projectsAwaitingReview}
+						/>
+						<Stat
+							i={1}
+							href={routes.suggestions}
+							icon={<MessageSquareText className="size-11" />}
+							label="Suggestions pending"
+							value={o?.queue.suggestionsPending}
+						/>
+						<Stat
+							i={2}
+							href={`${routes.suggestions}?tab=reports`}
+							icon={<Flag className="size-11" />}
+							label="Open reports"
+							value={o?.queue.reportsOpen}
+						/>
 						<Stat
 							i={3}
-							icon={<HandCoins className="size-11" />}
-							label={`${o?.stats.asset_code ?? "XLM"} contributed`}
-							value={o ? compact(o.stats.total_raised) : undefined}
-							title={o ? money(o.stats.total_raised) : undefined}
+							href={`${routes.contributions}?status=pending`}
+							icon={<AlertTriangle className="size-11" />}
+							label={o ? `Payments stuck > ${o.contributions.stuckAfterMinutes} min` : "Stuck payments"}
+							value={o?.contributions.stuckPending}
+							warn={!!o?.contributions.stuckPending}
 						/>
 					</ul>
 
-					<h2 className="mt-10 font-display text-2xl font-bold md:mt-14 md:text-[28px]">Contributions {RANGE_TITLE[range]}</h2>
-					<div className="mt-5 grid gap-6 xl:mt-6 xl:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)] xl:items-center xl:gap-[100px]">
-						<FundingChart data={o} range={range} onRange={setRange} loading={!o} fetching={overview.isPlaceholderData} />
-						<ProgressDonut progress={o?.progress} loading={!o} />
-					</div>
-
-					<div className="mt-10 grid gap-6 md:mt-16 xl:grid-cols-2 xl:gap-8">
-						<Panel title="Recent projects" subtitle="The most recently submitted projects" href={routes.projects} reveal={0}>
-							{!o ? (
-								<RowsSkeleton rows={5} cols={3} />
-							) : o.recent.length === 0 ? (
-								<EmptyState title="No projects yet" description="Submitted projects show up here." />
-							) : (
-								<table className="w-full table-fixed text-left">
-									<thead className="border-t border-white/10 text-base md:text-lg">
-										<tr>
-											<th scope="col" className="w-[38%] px-5 py-5 font-normal md:px-6">
-												Project
-											</th>
-											<th scope="col" className="hidden px-3 py-5 font-normal sm:table-cell">
-												Builder
-											</th>
-											<th scope="col" className="w-[34%] px-3 py-5 font-normal">
-												Status
-											</th>
-										</tr>
-									</thead>
-									<tbody>
-										{o.recent.map((p) => (
-											<tr key={p.id} className="border-t border-white/10 transition-colors hover:bg-white/[0.025]">
-												<td className="px-5 py-5 md:px-6">
-													<Link href={routes.project(p.id)} className="block truncate hover:text-primary-300">
-														{p.title}
-													</Link>
-													<span className="text-xs text-white/45 sm:hidden">{p.builder}</span>
-												</td>
-												<td className="hidden truncate px-3 py-5 sm:table-cell">{p.builder}</td>
-												<td className="px-3 py-5">
-													<StatusPill status={p.status} className="text-sm whitespace-normal md:text-[15px] [&>span]:size-3" />
-												</td>
-											</tr>
-										))}
-									</tbody>
-								</table>
-							)}
-						</Panel>
-
-						<Panel
-							title="Trending projects"
-							subtitle={`Most contributors ${RANGE_TITLE[range]}`}
-							href={`${routes.projects}?tab=completed`}
-							reveal={1}
-						>
-							{!o ? (
-								<RowsSkeleton rows={5} cols={2} />
-							) : o.trending.length === 0 ? (
-								<EmptyState title="Quiet period" description={`No confirmed contributions ${RANGE_TITLE[range]}.`} />
-							) : (
-								<ul>
-									{o.trending.map((t) => (
-										<li
-											key={t.id}
-											className="flex items-center gap-4 border-t border-white/10 px-5 py-4 transition-colors hover:bg-white/[0.025] md:px-6"
-										>
-											<Avatar name={t.title} src={t.logo_url} className="size-12 text-sm md:size-[52px]" />
-											<div className="min-w-0 flex-1">
-												<Link
-													href={routes.project(t.id)}
-													className="block truncate text-lg text-primary-400 hover:text-primary-300"
-												>
-													{t.title}
-												</Link>
-												<p className="truncate text-sm text-white/60 md:text-base">
-													by {t.builder} · {money(t.period_amount)}
-												</p>
-											</div>
-											<div className="flex shrink-0 items-center" title={`${t.period_contributors} contributors`}>
-												{t.recent_wallets.map((w, i) => (
-													<WalletDot key={w} address={w} className={cn("size-9", i > 0 && "-ml-2.5")} />
-												))}
-												{t.period_contributors > t.recent_wallets.length && (
-													<span className="-ml-2.5 flex size-9 items-center justify-center rounded-full bg-[#1E2030] text-xs ring-2 ring-surface-900">
-														+{t.period_contributors - t.recent_wallets.length}
-													</span>
-												)}
-											</div>
-										</li>
-									))}
-								</ul>
-							)}
-						</Panel>
-					</div>
-					<p className="mt-6 text-right text-xs text-white/35">All amounts are confirmed Stellar Testnet contributions.</p>
+					<section aria-labelledby="day-title" className="mt-8">
+						<h2 id="day-title" className="font-display text-xl font-bold md:text-2xl">
+							Payments in the last 24 hours
+						</h2>
+						<ul className="mt-4 grid grid-cols-3 gap-3 md:gap-5">
+							<Mini i={0} icon={<CheckCircle2 className="size-5" />} tone="good" label="Confirmed" value={o?.contributions.confirmed24h} />
+							<Mini i={1} icon={<XCircle className="size-5" />} tone="bad" label="Failed" value={o?.contributions.failed24h} />
+							<Mini i={2} icon={<Clock className="size-5" />} label="Expired" value={o?.contributions.expired24h} />
+						</ul>
+					</section>
 				</>
 			)}
+
+			<section aria-labelledby="analytics-title" className="mt-12">
+				<div className="flex flex-wrap items-end justify-between gap-3">
+					<div>
+						<h2 id="analytics-title" className="font-display text-2xl font-bold md:text-[28px]">
+							Analytics
+						</h2>
+						<p className="mt-1 text-sm text-white/55">
+							{a ? `${new Date(a.from).toLocaleDateString("en-GB")} – ${new Date(a.to).toLocaleDateString("en-GB")} (end exclusive)` : " "}
+						</p>
+					</div>
+					<div role="group" aria-label="Period" className="flex gap-1 rounded-lg bg-white/[0.05] p-1">
+						{RANGES.map((r) => (
+							<button
+								key={r.id}
+								type="button"
+								aria-pressed={days === r.id}
+								onClick={() => setDays(r.id)}
+								className={cn(
+									"h-9 rounded-md px-3.5 text-sm transition-colors",
+									days === r.id ? "bg-primary-500 text-white" : "text-white/65 hover:text-white",
+								)}
+							>
+								{r.label}
+							</button>
+						))}
+					</div>
+				</div>
+
+				{analytics.isError && !a ? (
+					<div className="mt-5">
+						<ErrorState message={errorMessage(analytics.error)} onRetry={() => void analytics.refetch()} retrying={analytics.isFetching} />
+					</div>
+				) : (
+					<div className={cn("transition-opacity", analytics.isPlaceholderData && "opacity-60")}>
+						<ul className="mt-5 grid grid-cols-2 gap-3 md:gap-5 xl:grid-cols-4">
+							<Metric
+								i={0}
+								label="Submission completion"
+								value={m ? rate(m.submissionCompletion.rate) : undefined}
+								hint={m ? `${m.submissionCompletion.submitted} of ${m.submissionCompletion.draftsCreated} drafts submitted` : ""}
+							/>
+							<Metric
+								i={1}
+								label="Median review time"
+								value={m ? (m.reviewTurnaround.medianHours === null ? "–" : `${m.reviewTurnaround.medianHours.toFixed(1)} h`) : undefined}
+								hint={m ? `${m.reviewTurnaround.decisions} decisions` : ""}
+							/>
+							<Metric
+								i={2}
+								label="Approved → funded"
+								value={m ? rate(m.approvalToFunding.rate) : undefined}
+								hint={m ? `${m.approvalToFunding.funded} of ${m.approvalToFunding.approved} approved projects` : ""}
+							/>
+							<Metric
+								i={3}
+								label="Contribution success"
+								value={m ? rate(m.contributions.successRate) : undefined}
+								hint={m ? `Failed transactions: ${rate(m.contributions.failedTransactionRate)}` : ""}
+							/>
+							<Metric i={4} label="Project views" value={m?.projectViews.toLocaleString()} hint="Public project page loads" />
+							<Metric
+								i={5}
+								label="Suggestions"
+								value={m?.suggestions.submitted.toLocaleString()}
+								hint={m ? `From ${m.suggestions.wallets} wallet${m.suggestions.wallets === 1 ? "" : "s"}` : ""}
+							/>
+							<Metric i={6} label="Builders signed up" value={a?.events.builder_registered.toLocaleString()} hint="New accounts" />
+							<Metric i={7} label="Wallets connected" value={a?.events.wallet_connected.toLocaleString()} hint="Wallet sign-ins" />
+						</ul>
+						<div className="mt-5 grid gap-5 xl:grid-cols-2">
+							<FunnelChart
+								title="Project funnel"
+								caption="Drafts to published projects in this period"
+								data={
+									a && [
+										{ label: "Drafts", value: a.events.project_draft_created },
+										{ label: "Submitted", value: a.events.project_submitted },
+										{ label: "Decided", value: a.events.project_review_decided },
+										{ label: "Published", value: a.events.project_published },
+									]
+								}
+							/>
+							<FunnelChart
+								title="Contribution funnel"
+								caption="Payments started to confirmed in this period"
+								data={
+									a && [
+										{ label: "Started", value: a.events.contribution_started },
+										{ label: "Submitted", value: a.events.contribution_submitted },
+										{ label: "Confirmed", value: a.events.contribution_confirmed },
+										{ label: "Failed", value: a.events.contribution_failed },
+									]
+								}
+							/>
+						</div>
+					</div>
+				)}
+			</section>
+
+			<section data-reveal="up" aria-labelledby="decisions-title" className="admin-card mt-12 overflow-hidden">
+				<div className="flex items-start justify-between gap-4 px-5 pt-5 pb-4 md:px-6">
+					<div>
+						<h2 id="decisions-title" className="font-display text-2xl font-bold md:text-[28px]">
+							Recent decisions
+						</h2>
+						<p className="mt-1 text-base text-white/80">The latest review actions by admins</p>
+					</div>
+					<Link
+						href={routes.projects}
+						className="inline-flex h-11 shrink-0 items-center rounded-lg bg-primary-500 px-4 text-base text-white transition-colors hover:bg-primary-600"
+					>
+						Projects
+					</Link>
+				</div>
+				{!o ? (
+					<RowsSkeleton rows={5} cols={3} />
+				) : o.recentDecisions.length === 0 ? (
+					<EmptyState title="No decisions yet" description="Approvals, rejections and change requests show up here." />
+				) : (
+					<ul>
+						{o.recentDecisions.map((r, i) => (
+							<li
+								key={`${r.projectId}-${r.createdAt}-${i}`}
+								className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-white/10 px-5 py-4 md:px-6"
+							>
+								<div className="min-w-0">
+									<Link href={routes.project(r.projectId)} className="block truncate text-lg hover:text-primary-300">
+										{r.projectTitle}
+									</Link>
+									<p className="text-sm text-white/60">
+										{PROJECT_ACTION_LABEL[r.action]} by {r.adminName ?? "an admin"}
+									</p>
+								</div>
+								<time dateTime={r.createdAt} title={fullDate(r.createdAt)} className="text-sm text-white/55">
+									{timeAgo(r.createdAt)}
+								</time>
+							</li>
+						))}
+					</ul>
+				)}
+			</section>
 		</div>
 	);
 }
 
 function Stat({
 	i,
+	href,
 	icon,
 	label,
 	value,
-	title,
+	warn,
 }: {
 	i: number;
+	href: string;
 	icon: ReactNode;
 	label: string;
-	value?: number | string;
-	title?: string;
+	value?: number;
+	warn?: boolean;
 }) {
 	return (
-		<li
-			style={d(i)}
-			data-reveal="up"
-			title={title}
-			className="group flex items-center justify-between gap-4 rounded-xl border-2 border-primary-500/80 px-6 py-6 transition-colors duration-200 hover:bg-primary-500/[0.06] md:px-8 md:py-7"
-		>
-			<div className="min-w-0">
-				<p className="truncate font-display text-[28px] leading-none font-bold text-primary-500 md:text-[34px]">
-					{value === undefined ? (
-						<span className="skeleton-shimmer inline-block h-8 w-20 rounded" />
-					) : typeof value === "number" ? (
-						<CountUp value={value} />
-					) : (
-						value
-					)}
-				</p>
-				<p className="mt-2 text-base text-white/90 md:text-lg">{label}</p>
-			</div>
-			<span
-				className="shrink-0 text-primary-500 transition-transform duration-300 ease-(--ease-settle) group-hover:scale-110"
-				aria-hidden
+		<li style={d(i)} data-reveal="up">
+			<Link
+				href={href}
+				className={cn(
+					"group flex items-center justify-between gap-4 rounded-xl border-2 px-6 py-6 transition-colors duration-200 md:px-8 md:py-7",
+					warn ? "border-warning-400/80 hover:bg-warning-400/[0.06]" : "border-primary-500/80 hover:bg-primary-500/[0.06]",
+				)}
 			>
-				{icon}
-			</span>
+				<div className="min-w-0">
+					<p
+						className={cn(
+							"truncate font-display text-[28px] leading-none font-bold md:text-[34px]",
+							warn ? "text-warning-300" : "text-primary-500",
+						)}
+					>
+						{value === undefined ? <span className="skeleton-shimmer inline-block h-8 w-16 rounded" /> : <CountUp value={value} />}
+					</p>
+					<p className="mt-2 text-base text-white/90 md:text-lg">{label}</p>
+				</div>
+				<span
+					className={cn(
+						"shrink-0 transition-transform duration-300 ease-(--ease-settle) group-hover:scale-110",
+						warn ? "text-warning-300" : "text-primary-500",
+					)}
+					aria-hidden
+				>
+					{icon}
+				</span>
+			</Link>
 		</li>
 	);
 }
 
-function Panel({
-	title,
-	subtitle,
-	href,
-	children,
-	reveal,
-}: {
-	title: string;
-	subtitle: string;
-	href: string;
-	children: ReactNode;
-	reveal: number;
-}) {
+function Mini({ i, icon, label, value, tone }: { i: number; icon: ReactNode; label: string; value?: number; tone?: "good" | "bad" }) {
 	return (
-		<section data-reveal="up" style={d(reveal)} className="admin-card overflow-hidden">
-			<div className="flex items-start justify-between gap-4 px-5 pt-5 pb-6 md:px-6">
-				<div>
-					<h2 className="font-display text-2xl font-bold md:text-[28px]">{title}</h2>
-					<p className="mt-1 text-base text-white/90 md:text-lg">{subtitle}</p>
-				</div>
-				<Link
-					href={href}
-					className="group inline-flex h-11 shrink-0 items-center gap-1.5 rounded-lg bg-primary-500 px-4 text-base text-white transition-colors hover:bg-primary-600 md:text-lg"
-				>
-					View all <ChevronRight className="size-5 transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden />
-				</Link>
-			</div>
-			{children}
-		</section>
+		<li data-reveal="up" style={d(i)} className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-4 md:px-5">
+			<p
+				className={cn(
+					"flex items-center gap-1.5 text-sm",
+					tone === "good" ? "text-success-200" : tone === "bad" ? "text-error-200" : "text-white/65",
+				)}
+			>
+				{icon} {label}
+			</p>
+			<p className="mt-2 font-display text-2xl font-bold tabular-nums md:text-3xl">
+				{value === undefined ? <span className="skeleton-shimmer inline-block h-7 w-10 rounded" /> : <CountUp value={value} />}
+			</p>
+		</li>
+	);
+}
+
+function Metric({ i, label, value, hint }: { i: number; label: string; value?: string; hint: string }) {
+	return (
+		<li data-reveal="up" style={d(i)} className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-4 md:px-5 md:py-5">
+			<p className="text-sm text-white/65">{label}</p>
+			<p className="mt-1.5 font-display text-2xl font-bold tabular-nums md:text-[28px]">
+				{value === undefined ? <span className="skeleton-shimmer inline-block h-7 w-14 rounded" /> : value}
+			</p>
+			<p className="mt-1 text-xs text-white/45">{hint}</p>
+		</li>
 	);
 }

@@ -5,20 +5,22 @@ import { ArrowLeft, ExternalLink, Flag } from "lucide-react";
 import { SUGGESTION_STATUS_LABEL, SUGGESTION_TYPE_LABEL } from "@repo/domain/labels";
 import { cn } from "@repo/ui/lib/utils";
 import { errorMessage } from "@/lib/api/errors";
+import { REPORT_REASON_LABEL, REPORT_STATUS_LABEL } from "@repo/domain/labels";
 import { EXPLORER, fullDate, shortKey, timeAgo } from "@/lib/format";
+import { routes } from "@/lib/routes";
 import { ErrorState } from "@/components/ui";
 import { useSuggestion } from "@/features/moderation/hooks";
 import { ModerationActions } from "@/features/moderation/components/ModerationActions";
 import { SUGGESTION_TONE } from "@/features/moderation/components/ModerationView";
 
-/** /suggestions/[id]: the full text (rendered as text, never HTML), project, sender wallet, reports, actions. */
+/** /suggestions/[id]: the full text (rendered as text, never HTML), project, sender wallet, its reports, actions. */
 export function SuggestionDetailView({ id }: { id: string }) {
 	const q = useSuggestion(id);
 	const s = q.data;
 	return (
 		<div className="admin-container max-w-[900px] pt-2 md:pt-6">
 			<Link
-				href="/suggestions"
+				href={routes.suggestions}
 				className="-ml-2 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-white/70 hover:bg-white/5 hover:text-white"
 			>
 				<ArrowLeft className="size-4" /> Moderation queue
@@ -47,7 +49,7 @@ export function SuggestionDetailView({ id }: { id: string }) {
 						<p className="leading-8 break-words whitespace-pre-line text-white/90">{s.body}</p>
 						{s.link && (
 							<p className="mt-4 rounded-lg border border-warning-400/25 bg-warning-400/[0.06] px-3.5 py-2.5 text-sm break-all">
-								Link (check before publishing): <span className="text-warning-100">{s.link}</span>
+								Link (check before approving): <span className="text-warning-100">{s.link}</span>
 							</p>
 						)}
 					</article>
@@ -55,7 +57,7 @@ export function SuggestionDetailView({ id }: { id: string }) {
 						<div className="bg-surface-900 px-5 py-4">
 							<dt className="text-sm text-white/50">Project</dt>
 							<dd className="mt-1 truncate">
-								<Link href={`/projects/${s.project.id}`} className="hover:text-primary-300">
+								<Link href={routes.project(s.project.id)} className="hover:text-primary-300">
 									{s.project.title}
 								</Link>
 							</dd>
@@ -64,24 +66,30 @@ export function SuggestionDetailView({ id }: { id: string }) {
 							<dt className="text-sm text-white/50">Sent by</dt>
 							<dd className="mt-1">
 								<a
-									href={`${EXPLORER}/account/${s.wallet_address}`}
+									href={`${EXPLORER}/account/${s.walletAddress}`}
 									target="_blank"
 									rel="noopener noreferrer"
 									className="inline-flex items-center gap-1 font-mono text-sm hover:text-primary-300"
 								>
-									{shortKey(s.wallet_address, 6, 6)} <ExternalLink className="size-3.5" />
+									{shortKey(s.walletAddress, 6, 6)} <ExternalLink className="size-3.5" />
 								</a>
-								<span className="block text-xs text-white/45">{s.wallet_suggestion_count} suggestion(s) from this wallet</span>
+								<Link href={routes.contributor(s.walletAddress)} className="block text-xs text-primary-300 hover:underline">
+									This wallet’s activity
+								</Link>
 							</dd>
 						</div>
 						<div className="bg-surface-900 px-5 py-4">
 							<dt className="text-sm text-white/50">Received</dt>
-							<dd className="mt-1" title={fullDate(s.created_at)}>
-								{timeAgo(s.created_at)}
+							<dd className="mt-1" title={fullDate(s.createdAt)}>
+								{timeAgo(s.createdAt)}
 							</dd>
 						</div>
 					</dl>
-					{s.moderation_reason && <p className="mt-4 text-sm text-white/60">Last moderation note: “{s.moderation_reason}”</p>}
+					{s.moderationNote && (
+						<p className="mt-4 text-sm whitespace-pre-line text-white/60">
+							Moderation note{s.moderatedBy ? ` (by ${s.moderatedBy}${s.moderatedAt ? `, ${timeAgo(s.moderatedAt)}` : ""})` : ""}: {s.moderationNote}
+						</p>
+					)}
 					<section aria-labelledby="reports-title" className="mt-8">
 						<h2 id="reports-title" className="flex items-center gap-2 font-display text-xl font-bold">
 							<Flag className="size-5 text-error-200" /> Reports ({s.reports.length})
@@ -92,9 +100,12 @@ export function SuggestionDetailView({ id }: { id: string }) {
 							<ul className="mt-3 flex flex-col gap-2">
 								{s.reports.map((r) => (
 									<li key={r.id} className="rounded-xl border border-white/10 px-4 py-3 text-sm">
-										<p>{r.reason}</p>
+										<p>
+											{REPORT_REASON_LABEL[r.reason]}
+											{r.details && <span className="whitespace-pre-line text-white/70"> · {r.details}</span>}
+										</p>
 										<p className="mt-1 text-xs text-white/45">
-											{shortKey(r.reporter_wallet_or_user, 5, 5)} · {timeAgo(r.created_at)} · {r.status}
+											{shortKey(r.reporterAddress, 5, 5)} · {timeAgo(r.createdAt)} · {REPORT_STATUS_LABEL[r.status]}
 										</p>
 									</li>
 								))}

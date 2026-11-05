@@ -56,13 +56,3 @@ export const BUILDER_PROJECT_GROUPS: Record<Exclude<BuilderProjectGroup, "all">,
 
 export const inBuilderGroup = (status: ProjectStatus, group: BuilderProjectGroup) =>
 	group === "all" || BUILDER_PROJECT_GROUPS[group].includes(status);
-
-/** Admin Projects tabs (design "admin page 2"). Each maps to one or more `?status=` values. */
-export type AdminProjectTab = "all" | "queue" | "approved" | "changes_requested" | "closed";
-
-export const ADMIN_PROJECT_TABS: Record<Exclude<AdminProjectTab, "all">, readonly ProjectStatus[]> = {
-	queue: ["submitted", "under_review"],
-	approved: ["approved"],
-	changes_requested: ["changes_requested"],
-	closed: ["rejected", "archived"],
-};
