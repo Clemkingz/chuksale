@@ -1,110 +1,124 @@
 "use client";
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import type { Category, Paginated, PublicProject, ProjectUpdate, SuggestionType } from "@repo/domain/types";
-import { api, unwrap } from "@/lib/api/client";
+import type {
+	Page,
+	ProjectStage,
+	ProjectType,
+	PublicCategory,
+	PublicContribution,
+	PublicProject,
+	PublicProjectCard,
+	PublicProjectsQuery,
+	PublicSuggestion,
+	SuggestionType,
+} from "@repo/domain/types";
+import { api, cleanParams, unwrap } from "@/lib/api/client";
 
-/** Public discovery (PRD §6.3). Contract: docs/API.md § Public projects. */
+/** Public discovery (backend guide, "Discovery"): only approved, published projects ever come back. */
 
-export type ExploreFilters = { q: string; category: string; stage: string; funding: string; sort: string; page: number };
+export type ExploreFilters = {
+	q: string;
+	category: string;
+	stage: ProjectStage | "";
+	type: ProjectType | "";
+	/** "1" = only projects that accept contributions. */
+	fundraising: string;
+	/** Asset id. */
+	asset: string;
+	sort: NonNullable<PublicProjectsQuery["sort"]>;
+	page: number;
+};
 
 export const projectKeys = {
 	all: ["projects"] as const,
-	list: (f: ExploreFilters) => ["projects", "list", f] as const,
+	list: (f: ExploreFilters, limit: number) => ["projects", "list", f, limit] as const,
 	detail: (slug: string) => ["projects", "detail", slug] as const,
 };
 
 export function useProjects(f: ExploreFilters, limit = 9) {
 	return useQuery({
-		queryKey: projectKeys.list(f),
+		queryKey: projectKeys.list(f, limit),
 		queryFn: async () =>
-			unwrap<Paginated<PublicProject>>(
+			unwrap<Page<PublicProjectCard>>(
 				await api.get("/projects", {
-					params: {
-						q: f.q || undefined,
-						category: f.category || undefined,
-						stage: f.stage || undefined,
-						funding: f.funding || undefined,
-						sort: f.sort || undefined,
-						page: f.page,
+					params: cleanParams({
+						q: f.q.trim(),
+						category: f.category,
+						stage: f.stage,
+						type: f.type,
+						fundraising: f.fundraising ? true : undefined,
+						asset: f.asset,
+						sort: f.sort,
 						limit,
-					},
+						offset: (f.page - 1) * limit,
+					}),
 				}),
 			),
 		placeholderData: keepPreviousData,
 	});
 }
 
-export function useFeaturedProjects() {
+/** The home row: featured first, then newest (the API's default sort). */
+export function useFeaturedProjects(limit = 6) {
 	return useQuery({
-		queryKey: ["projects", "featured"],
-		queryFn: async () => unwrap<PublicProject[]>(await api.get("/projects/featured")),
+		queryKey: ["projects", "featured", limit],
+		queryFn: async () => unwrap<Page<PublicProjectCard>>(await api.get("/projects", { params: { sort: "featured", limit } })),
 	});
 }
 
 export function useCategories() {
 	return useQuery({
 		queryKey: ["categories"],
-		queryFn: async () => unwrap<Category[]>(await api.get("/categories")),
+		queryFn: async () => unwrap<PublicCategory[]>(await api.get("/categories")),
 		staleTime: 5 * 60_000,
 	});
 }
 
-export function usePublicStats() {
-	return useQuery({
-		queryKey: ["stats"],
-		queryFn: async () =>
-			unwrap<{ projects: number; contributors: number; contributions: number; builders: number }>(await api.get("/stats")),
-	});
-}
-
+/**
+ * The public project page. The API counts a view each time it's fetched, so it's cached for the visit (a trip to
+ * Contribute and back reuses it) instead of refetching on focus.
+ */
 export function useProject(slug: string) {
 	return useQuery({
 		queryKey: projectKeys.detail(slug),
 		queryFn: async () => unwrap<PublicProject>(await api.get(`/projects/${slug}`)),
+		staleTime: 5 * 60_000,
 		retry: (n, e) => n < 2 && (e as { response?: { status?: number } })?.response?.status !== 404,
 	});
 }
 
-export type PublicContribution = {
-	id: string;
-	sender_address: string;
-	amount: string;
-	asset_id: string;
-	tx_hash: string;
-	confirmed_at: string;
-};
+export const PROJECT_CONTRIBUTIONS_PAGE = 8;
 
+/** Confirmed contributions, newest first, with shortened addresses and explorer links. */
 export function useProjectContributions(slug: string, page: number) {
 	return useQuery({
 		queryKey: ["projects", "contributions", slug, page],
 		queryFn: async () =>
-			unwrap<Paginated<PublicContribution>>(await api.get(`/projects/${slug}/contributions`, { params: { page, limit: 8 } })),
+			unwrap<Page<PublicContribution>>(
+				await api.get(`/projects/${slug}/contributions`, {
+					params: { limit: PROJECT_CONTRIBUTIONS_PAGE, offset: (page - 1) * PROJECT_CONTRIBUTIONS_PAGE },
+				}),
+			),
 		placeholderData: keepPreviousData,
 	});
 }
 
-export type PublicSuggestion = {
-	id: string;
-	type: SuggestionType;
-	title: string;
-	body: string;
-	link: string | null;
-	wallet_address: string;
-	created_at: string;
-};
-
-export function useProjectSuggestions(slug: string) {
+/** Published suggestions, newest first. */
+export function useProjectSuggestions(slug: string, type?: SuggestionType) {
 	return useQuery({
-		queryKey: ["projects", "suggestions", slug],
+		queryKey: ["projects", "suggestions", slug, type ?? "all"],
 		queryFn: async () =>
-			unwrap<Paginated<PublicSuggestion>>(await api.get(`/projects/${slug}/suggestions`, { params: { limit: 20 } })),
+			unwrap<Page<PublicSuggestion>>(await api.get(`/projects/${slug}/suggestions`, { params: cleanParams({ limit: 20, type }) })),
 	});
 }
 
-export function useProjectUpdates(slug: string) {
+/** How many public projects match (`paginationMeta.totalCount` of a 1-item page): home stats. */
+export function useProjectCount(params: Pick<PublicProjectsQuery, "fundraising" | "featured"> = {}) {
 	return useQuery({
-		queryKey: ["projects", "updates", slug],
-		queryFn: async () => unwrap<ProjectUpdate[]>(await api.get(`/projects/${slug}/updates`)),
+		queryKey: ["projects", "count", params],
+		queryFn: async () =>
+			unwrap<Page<PublicProjectCard>>(await api.get("/projects", { params: cleanParams({ ...params, limit: 1 }) })).paginationMeta
+				.totalCount,
 	});
 }

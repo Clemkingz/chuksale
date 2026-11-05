@@ -17,6 +17,7 @@ export function AddressChip({
 	tail = 5,
 	className,
 	explorerLink = true,
+	explorerBase,
 }: {
 	value: string;
 	kind?: "account" | "tx";
@@ -24,6 +25,8 @@ export function AddressChip({
 	tail?: number;
 	className?: string;
 	explorerLink?: boolean;
+	/** The network's explorer (`/stellar/network` explorerUrl); Testnet's by default. */
+	explorerBase?: string;
 }) {
 	const [copied, setCopied] = useState(false);
 	return (
@@ -51,7 +54,7 @@ export function AddressChip({
 			</button>
 			{explorerLink && (
 				<a
-					href={kind === "tx" ? explorer.tx(value) : explorer.account(value)}
+					href={kind === "tx" ? explorer.tx(value, explorerBase) : explorer.account(value, explorerBase)}
 					target="_blank"
 					rel="noopener noreferrer"
 					onClick={(e) => e.stopPropagation()}

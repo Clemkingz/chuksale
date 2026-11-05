@@ -1,4 +1,4 @@
-import type { Notification, NotificationCategory } from "@repo/domain/types";
+import type { Notification, NotificationCategory } from "../model";
 import { read, update, type MockDb, type MockNotification, type MockUser } from "../db";
 import { HttpError, ok, route } from "../router";
 import { DAY, hex, iso, paginate, uuid } from "../util";

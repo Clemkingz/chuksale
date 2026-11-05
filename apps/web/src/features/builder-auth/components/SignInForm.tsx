@@ -5,14 +5,14 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@repo/ui/button";
-import { errorData, errorMessage } from "@/lib/api/errors";
+import { errorMessage, errorStatus } from "@/lib/api/errors";
 import { DEMO_ACCOUNTS, USE_MOCK_API } from "@/lib/api/source";
+import { ADMIN_URL } from "@/lib/site";
 import { routes } from "@/lib/routes";
 import { notify } from "@/lib/use-toast";
-import { AuthTitle, OrDivider } from "@/features/builder-auth/components/AuthShell";
+import { AuthTitle } from "@/features/builder-auth/components/AuthShell";
 import { FormError, PasswordField, TextField } from "@/components/forms/Fields";
-import { GoogleButton } from "@/features/builder-auth/components/GoogleButton";
-import { showDemoCode, useGoogleSignIn, useSignIn } from "@/features/builder-auth/hooks";
+import { startSession, useResendOtp, useSignIn } from "@/features/builder-auth/hooks";
 import { signInSchema, type SignInValues } from "@/features/builder-auth/schema";
 
 /** Only same-app paths: `?next=https://evil.example` must not redirect off-site. */
@@ -24,7 +24,7 @@ export function SignInForm() {
 	const params = useSearchParams();
 	const next = safeNext(params.get("next"));
 	const signIn = useSignIn();
-	const google = useGoogleSignIn();
+	const resend = useResendOtp();
 	const form = useForm<SignInValues>({
 		resolver: zodResolver(signInSchema),
 		defaultValues: { email: params.get("email") ?? "", password: "" },
@@ -32,25 +32,28 @@ export function SignInForm() {
 	});
 	const { errors } = form.formState;
 
-	const welcome = (name: string) => {
-		notify.success(`Welcome back, ${name.split(" ")[0]}`);
-		router.replace(next);
-	};
-
 	const onSubmit = form.handleSubmit((values) =>
 		signIn.mutate(values, {
-			onSuccess: (s) => welcome(s.user.display_name),
+			onSuccess: (tokens) => {
+				// Admins use the same login route but the admin console; this app never keeps their tokens.
+				if (tokens.role === "admin") return;
+				startSession(tokens);
+				notify.success("Welcome back");
+				router.replace(next);
+			},
 			onError: (error) => {
-				const data = errorData(error);
-				if (data?.reason === "email_unverified") {
-					showDemoCode(data as { debug_code?: string }, values.email);
+				// 403 "Email not verified": the code screen, with a fresh code.
+				if (errorStatus(error) === 403 && /verif/i.test(errorMessage(error))) {
+					resend.mutate(values.email);
 					router.push(`${routes.verifyEmail}?email=${encodeURIComponent(values.email)}&next=${encodeURIComponent(next)}`);
 				}
 			},
 		}),
 	);
 
-	const unverified = errorData(signIn.error)?.reason === "email_unverified";
+	const isAdmin = signIn.data?.role === "admin";
+	const unverified = errorStatus(signIn.error) === 403 && /verif/i.test(errorMessage(signIn.error));
+	const suspended = errorStatus(signIn.error) === 403 && /suspend/i.test(errorMessage(signIn.error));
 
 	return (
 		<>
@@ -82,18 +85,30 @@ export function SignInForm() {
 					error={errors.password?.message}
 					{...form.register("password")}
 				/>
-				<FormError message={signIn.isError && !unverified ? errorMessage(signIn.error) : null} />
+				<FormError
+					message={
+						suspended
+							? "This account is suspended. Contact the Chucksales team if you think this is a mistake."
+							: errorStatus(signIn.error) === 401
+								? "Email or password is wrong."
+								: signIn.isError && !unverified
+									? errorMessage(signIn.error)
+									: null
+					}
+				/>
+				{isAdmin && (
+					<p className="rounded-lg border border-primary-500/30 bg-primary-500/10 px-4 py-3 text-sm leading-6 text-white/85">
+						This is an admin account. Sign in on the{" "}
+						<a href={ADMIN_URL} className="text-primary-300 underline-offset-4 hover:underline">
+							admin console
+						</a>{" "}
+						instead.
+					</p>
+				)}
 				<Button type="submit" className="mt-1 text-lg" isLoading={signIn.isPending} loadingLabel="Signing in">
 					Sign in
 				</Button>
 			</form>
-			<OrDivider />
-			<GoogleButton
-				isLoading={google.isPending}
-				onClick={() =>
-					google.mutate(undefined, { onSuccess: (s) => welcome(s.user.display_name), onError: (e) => notify.fromError(e) })
-				}
-			/>
 			<p className="mt-8 text-center text-base">
 				Don’t have an account?{" "}
 				<Link href={routes.signUp} className="text-primary-400 hover:underline">

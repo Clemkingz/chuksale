@@ -1,7 +1,7 @@
-import type { BuilderProfileSummary, BuilderProjectListItem, Project, ProjectLink } from "@repo/domain/types";
-import { countsTowardTotal } from "@repo/domain/contribution-status";
+import type { BuilderProfileSummary, BuilderProjectListItem, Project, ProjectLink } from "../model";
+import { countsTowardTotal } from "../model-rules";
 import { sum } from "@repo/domain/money";
-import { inBuilderGroup, isBuilderEditable, transition, type BuilderProjectGroup } from "@repo/domain/project-status";
+import { inBuilderGroup, isBuilderEditable, transition, type BuilderProjectGroup } from "../model-rules";
 import { read, update, type MockDb, type MockUser } from "../db";
 import { HttpError, ok, route } from "../router";
 import { iso, paginate, uuid } from "../util";

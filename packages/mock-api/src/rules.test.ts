@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { InvalidTransitionError, ReasonRequiredError } from "@repo/domain/project-status";
+import { InvalidTransitionError, ReasonRequiredError } from "./model-rules";
 import { read, resetMockDb } from "./db";
 import { HttpError, TOKEN_PREFIX, dispatch } from "./router";
 import { DEMO_ADMIN_EMAIL, DEMO_BUILDER_EMAIL } from "./seed";

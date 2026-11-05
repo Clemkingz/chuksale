@@ -1,88 +1,94 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, ArrowLeft, Check, Info, Loader2, ShieldCheck, Wallet } from "lucide-react";
-import { getControls } from "@repo/mock-api/controls";
-import { compare, formatAmount, isValidAmount } from "@repo/domain/money";
-import type { AcceptedAsset } from "@repo/domain/types";
+import { AlertTriangle, ArrowLeft, Check, Clock, Info, Loader2, ShieldCheck, Wallet } from "lucide-react";
+import { compare, formatAmount, isValidAmount, sum } from "@repo/domain/money";
+import type { PreparedContribution, StellarAsset } from "@repo/domain/types";
 import { Button } from "@repo/ui/button";
 import { cn } from "@repo/ui/lib/utils";
-import { errorMessage } from "@/lib/api/errors";
-import { USE_MOCK_API } from "@/lib/api/source";
+import { errorMessage, errorStatus } from "@/lib/api/errors";
 import { routes } from "@/lib/routes";
-import { ACCEPTED_ASSETS, shortKey } from "@/lib/stellar/config";
+import { useAccountSummary, useNetwork } from "@/lib/stellar/network";
 import { notify } from "@/lib/use-toast";
 import { AddressChip } from "@/components/AddressChip";
 import { ProjectLogo } from "@/components/ProjectLogo";
 import { EmptyState } from "@/components/States";
 import { useProject } from "@/features/projects/hooks";
-import { ContributionError, buildContributionTx, submitContributionTx } from "@/features/contributions/stellar-tx";
-import { useCreateIntent, useSubmitContribution, useWalletBalances, type Intent } from "@/features/contributions/hooks";
+import { usePrepareContribution, useSubmitContribution } from "@/features/contributions/hooks";
+import { signAny } from "@/features/wallet/connect";
 import { useConnectedWallet, useRequireWallet } from "@/features/wallet/hooks";
-import { isWalletDismissal, signWithWallet, walletErrorMessage, type WalletId } from "@/features/wallet/kit";
+import { isWalletDismissal, walletErrorMessage } from "@/features/wallet/kit";
 
 /**
- * /projects/[slug]/contribute (PRD §6.5): Amount → Review → Sign, then the status page.
- * D1: a direct payment from the contributor's wallet to the project's address with the intent's reference as memo.
- * D2 assets (XLM, USDC), D12 minimum 1. A closed or declined wallet prompt is never success; a lost response after
- * sending is "check status", never sent again. The Demo wallet (mock mode) simulates the payment.
+ * /projects/[slug]/contribute (backend guide, "Contributions"): Amount → Review → Sign, then the status page.
+ * The API prepares the payment (direct, wallet to builder, in an accepted asset) after checking asset, trustlines
+ * and balances; the wallet signs it; the API submits it to Stellar. A closed or declined wallet prompt is never
+ * success, and a lost response after submitting is "check status" (the status page polls), never "send again".
  */
 
 const QUICK = ["5", "10", "25", "50", "100"];
-const MIN = "1";
 type Step = "amount" | "review" | "sign";
-type Phase = "intent" | "build" | "wallet" | "submit" | "record";
+type Phase = "wallet" | "submit";
 
-const PHASES: { id: Phase; label: string }[] = [
-	{ id: "intent", label: "Preparing your contribution" },
-	{ id: "build", label: "Checking your wallet’s balance" },
-	{ id: "wallet", label: "Waiting for you to approve in your wallet" },
-	{ id: "submit", label: "Sending to Stellar Testnet" },
-	{ id: "record", label: "Recording it for verification" },
-];
+/** Every payment pays a small network fee in XLM; keep this much spare for it (display check only). */
+const FEE_HEADROOM = "0.01";
 
 export function ContributeView({ slug }: { slug: string }) {
 	const router = useRouter();
 	const project = useProject(slug);
+	const network = useNetwork();
 	const { address, walletId } = useConnectedWallet();
 	const requireWallet = useRequireWallet();
-	const balances = useWalletBalances(address, walletId === "demo");
-	const createIntent = useCreateIntent();
+	const account = useAccountSummary(address);
+	const prepare = usePrepareContribution(slug);
 	const submit = useSubmitContribution();
 
+	const p = project.data;
+	const accepted = p?.funding?.acceptedAssets ?? [];
 	const [step, setStep] = useState<Step>("amount");
-	const [asset, setAsset] = useState<AcceptedAsset>(ACCEPTED_ASSETS[0]!);
+	const [assetId, setAssetId] = useState<string | null>(null);
 	const [amount, setAmount] = useState("");
 	const [touched, setTouched] = useState(false);
 	const [agreed, setAgreed] = useState(false);
-	const [phase, setPhase] = useState<Phase>("intent");
-	const [failure, setFailure] = useState<{ message: string; unknown?: boolean; hash?: string; intent?: Intent } | null>(null);
+	const [phase, setPhase] = useState<Phase>("wallet");
+	const [prepared, setPrepared] = useState<PreparedContribution | null>(null);
+	const [failure, setFailure] = useState<string | null>(null);
 
-	const p = project.data;
+	const asset: StellarAsset | undefined = accepted.find((a) => a.id === assetId) ?? accepted[0];
 	const trimmed = amount.trim();
 	const amountError = !trimmed
 		? "Enter an amount."
 		: !isValidAmount(trimmed)
-			? "Use numbers only, with up to 7 decimal places."
-			: compare(trimmed, MIN) < 0
-				? `The minimum is ${MIN} ${asset.code}.`
-				: null;
-	const held =
-		balances.data?.status === "active"
-			? balances.data.balances.find((b) => b.code === asset.code && (b.issuer ?? null) === asset.issuer)
-			: undefined;
-	const overBalance = !!held && !amountError && compare(trimmed, held.balance) > 0;
+			? "Use numbers only, with up to 7 decimal places, above 0."
+			: null;
 
-	if (project.isError || (p && (!p.fundraising || !p.destination_address)))
+	// The guide's pre-sign checks, in order, from the account lookup (the API re-checks them all on prepare).
+	const summary = account.data;
+	const held = summary?.assets.find((a) => a.id === asset?.id);
+	const xlm = summary?.assets.find((a) => a.native);
+	const check: string | null = !summary
+		? null
+		: !summary.exists
+			? "This wallet isn’t activated yet. On Testnet, fund it with Friendbot at lab.stellar.org."
+			: asset && !asset.native && !held?.trusted
+				? `Add ${asset.code} to your wallet first (its add-asset screen, issuer ${asset.issuer?.slice(0, 4)}…${asset.issuer?.slice(-4)}).`
+				: !amountError && held?.balance != null && compare(trimmed, held.balance) > 0
+					? `Not enough ${asset?.code}: this wallet holds ${formatAmount(held.balance, 7)}.`
+					: !xlm?.balance ||
+						  compare(xlm.balance, asset?.native && !amountError ? sum([trimmed, FEE_HEADROOM]) : FEE_HEADROOM) < 0
+						? "Keep a little XLM in this wallet: every payment pays a small network fee in XLM."
+						: null;
+
+	if (project.isError || (p && (!p.fundraisingEnabled || !p.funding || !accepted.length)))
 		return (
 			<div className="app-container py-16">
 				<EmptyState
 					title="This project isn’t accepting contributions"
-					description="It may not be approved yet, or fundraising is off."
+					description="It may not be listed, or fundraising is off."
 					action={
-						<Button asChild>
+						<Button asChild className="w-auto px-6">
 							<Link href={routes.projects}>Explore projects</Link>
 						</Button>
 					}
@@ -90,76 +96,56 @@ export function ContributeView({ slug }: { slug: string }) {
 			</div>
 		);
 
-	/** The whole send: intent → (demo: simulate) | (real: build → sign → Horizon) → record hash → status page. */
-	async function send(wallet: string) {
+	/** Step 1 → 2: the API prepares the payment (needs the wallet token). */
+	async function toReview() {
+		if (!asset) return;
+		setFailure(null);
+		try {
+			const prep = await prepare.mutateAsync({ assetId: asset.id, amount: trimmed });
+			setPrepared(prep);
+			setAgreed(false);
+			setStep("review");
+		} catch (e) {
+			setFailure(errorMessage(e));
+		}
+	}
+
+	/** Step 3: sign in the wallet, then submit. */
+	async function signAndSubmit(prep: PreparedContribution) {
+		if (!walletId) return;
 		setStep("sign");
 		setFailure(null);
-		setPhase("intent");
-		let intent: Intent;
+		setPhase("wallet");
+		let signed: string;
 		try {
-			intent = await createIntent.mutateAsync({
-				project_slug: slug,
-				wallet_address: wallet,
-				asset_id: asset.id,
-				amount: trimmed,
-			});
+			signed = await signAny(walletId, prep.transaction, prep.contributorAddress, prep.networkPassphrase);
 		} catch (e) {
-			setFailure({ message: errorMessage(e) });
-			return;
-		}
-
-		if (walletId === "demo" || !walletId) {
-			setPhase("wallet");
-			await new Promise((r) => setTimeout(r, 1200));
-			setPhase("record");
-			try {
-				const c = await submit.mutateAsync({
-					intentId: intent.id,
-					simulated: true,
-					scenario: USE_MOCK_API ? getControls().paymentScenario : "confirmed",
-				});
-				router.replace(routes.contribution(c.id));
-			} catch (e) {
-				setFailure({ message: errorMessage(e), intent });
-			}
-			return;
-		}
-
-		let hash: string;
-		try {
-			setPhase("build");
-			const { xdr } = await buildContributionTx(intent, asset, wallet);
-			setPhase("wallet");
-			const signed = await signWithWallet(walletId as WalletId, xdr, wallet);
-			setPhase("submit");
-			hash = await submitContributionTx(signed);
-		} catch (e) {
-			if (e instanceof ContributionError) return setFailure({ message: e.message, unknown: e.outcomeUnknown, intent });
 			if (isWalletDismissal(e)) {
 				// Declining is a choice, not a failure: nothing was sent.
 				notify.info("Nothing was sent", "You closed or declined the wallet request.");
 				setStep("review");
 				return;
 			}
-			return setFailure({ message: walletErrorMessage(e), intent });
+			setFailure(walletErrorMessage(e));
+			return;
 		}
-		await record(intent, hash);
-	}
-
-	/** Records the hash with the API. Safe to repeat (idempotent on tx_hash), so "Try recording again" is safe. */
-	async function record(intent: Intent, hash: string) {
-		setPhase("record");
+		setPhase("submit");
 		try {
-			const c = await submit.mutateAsync({ intentId: intent.id, tx_hash: hash });
+			const c = await submit.mutateAsync({ id: prep.id, transaction: signed });
 			router.replace(routes.contribution(c.id));
 		} catch (e) {
-			setFailure({
-				message: `Your payment was sent (transaction ${shortKey(hash, 6, 6)}), but we couldn’t record it yet. ${errorMessage(e)}`,
-				hash,
-				intent,
-			});
+			// No answer (timeout, network): the payment may have gone through. The status page checks; never resend.
+			if (!errorStatus(e)) {
+				notify.info("Checking your payment", "We didn’t hear back in time. This page checks Stellar for it.");
+				router.replace(routes.contribution(prep.id));
+				return;
+			}
+			setFailure(errorMessage(e));
 		}
 	}
+
+	const steps: Step[] = ["amount", "review", "sign"];
+	const stepIndex = steps.indexOf(step);
 
 	return (
 		<div className="app-container max-w-[760px] py-10 md:py-14">
@@ -169,7 +155,7 @@ export function ContributeView({ slug }: { slug: string }) {
 
 			<div className="mt-5 flex items-center gap-4">
 				{p ? (
-					<ProjectLogo title={p.title} src={p.logo_url} className="size-12 text-sm" />
+					<ProjectLogo title={p.title} src={p.coverImageUrl} className="size-12 text-sm" />
 				) : (
 					<span className="skeleton-shimmer block size-12 rounded-full" />
 				)}
@@ -180,17 +166,13 @@ export function ContributeView({ slug }: { slug: string }) {
 			</div>
 
 			<ol aria-label="Steps" className="mt-8 grid grid-cols-3 gap-2">
-				{(["amount", "review", "sign"] as Step[]).map((s, i) => {
-					const idx = ["amount", "review", "sign"].indexOf(step);
-					const done = i < idx;
-					const active = i === idx;
+				{steps.map((s, i) => {
+					const done = i < stepIndex;
+					const active = i === stepIndex;
 					return (
 						<li key={s} aria-current={active ? "step" : undefined} className="flex flex-col gap-2">
 							<span
-								className={cn(
-									"h-1 rounded-full transition-colors duration-500",
-									done || active ? "bg-primary-500" : "bg-white/10",
-								)}
+								className={cn("h-1 rounded-full transition-colors duration-500", done || active ? "bg-primary-500" : "bg-white/10")}
 							/>
 							<span
 								className={cn(
@@ -211,38 +193,32 @@ export function ContributeView({ slug }: { slug: string }) {
 						<fieldset>
 							<legend className="text-base">Asset</legend>
 							<div className="mt-3 grid gap-3 sm:grid-cols-2">
-								{ACCEPTED_ASSETS.map((a) => (
-									<label
-										key={a.id}
-										className={cn(
-											"flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3.5 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary-500/40",
-											asset.id === a.id ? "border-primary-500 bg-primary-500/10" : "border-white/15 hover:border-white/30",
-										)}
-									>
-										<input
-											type="radio"
-											name="asset"
-											className="sr-only"
-											checked={asset.id === a.id}
-											onChange={() => setAsset(a)}
-										/>
-										<span
-											aria-hidden
-											className={cn(
-												"flex size-10 items-center justify-center rounded-full text-sm font-bold",
-												a.code === "USDC" ? "bg-[#2775CA]" : "bg-white text-black",
-											)}
-										>
-											{a.code === "USDC" ? "$" : "✦"}
-										</span>
-										<span className="min-w-0">
-											<span className="block font-medium">{a.label}</span>
-											<span className="block truncate text-xs text-white/55">
-												{a.issuer ? `Issuer ${shortKey(a.issuer, 5, 5)}` : "Native Stellar asset"}
-											</span>
-										</span>
-									</label>
-								))}
+								{!p
+									? [0, 1].map((k) => <span key={k} className="skeleton-shimmer block h-[70px] rounded-xl" />)
+									: accepted.map((a) => (
+											<label
+												key={a.id}
+												className={cn(
+													"flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3.5 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary-500/40",
+													asset?.id === a.id ? "border-primary-500 bg-primary-500/10" : "border-white/15 hover:border-white/30",
+												)}
+											>
+												<input
+													type="radio"
+													name="asset"
+													className="sr-only"
+													checked={asset?.id === a.id}
+													onChange={() => setAssetId(a.id)}
+												/>
+												<AssetIcon asset={a} />
+												<span className="min-w-0">
+													<span className="block font-medium">{a.code}</span>
+													<span className="block truncate text-xs text-white/55">
+														{a.issuer ? `Issuer ${a.issuer.slice(0, 5)}…${a.issuer.slice(-5)}` : "Native Stellar asset"}
+													</span>
+												</span>
+											</label>
+										))}
 							</div>
 						</fieldset>
 
@@ -265,7 +241,7 @@ export function ContributeView({ slug }: { slug: string }) {
 									touched && amountError ? "border-error-300" : "border-white/30 focus:border-primary-500",
 								)}
 							/>
-							<span className="absolute top-1/2 right-5 -translate-y-1/2 text-lg text-white/60">{asset.code}</span>
+							<span className="absolute top-1/2 right-5 -translate-y-1/2 text-lg text-white/60">{asset?.code}</span>
 						</div>
 						<div className="mt-3 flex flex-wrap gap-2">
 							{QUICK.map((q) => (
@@ -278,7 +254,7 @@ export function ContributeView({ slug }: { slug: string }) {
 										amount === q ? "border-primary-500 bg-primary-500/15" : "border-white/15 text-white/80 hover:border-white/35",
 									)}
 								>
-									{q} {asset.code}
+									{q} {asset?.code}
 								</button>
 							))}
 						</div>
@@ -286,102 +262,55 @@ export function ContributeView({ slug }: { slug: string }) {
 							id="amount-help"
 							className={cn(
 								"mt-3 text-sm",
-								touched && amountError ? "text-error-200" : overBalance ? "text-warning-200" : "text-white/55",
+								touched && amountError ? "text-error-200" : check ? "text-warning-200" : "text-white/55",
 							)}
 						>
 							{touched && amountError
 								? amountError
-								: overBalance
-									? `That’s more than this wallet holds (${formatAmount(held!.balance)} ${asset.code}).`
-									: held
-										? `Available: ${formatAmount(held.balance, 7)} ${asset.code}${balances.data?.status === "active" && balances.data.simulated ? " (demo)" : ""}`
-										: `Minimum ${MIN} ${asset.code}. Up to 7 decimal places.`}
+								: check
+									? check
+									: held?.balance
+										? `Available: ${formatAmount(held.balance, 7)} ${asset?.code}`
+										: "Up to 7 decimal places."}
 						</p>
+
+						{failure && (
+							<p role="alert" className="animate-pop mt-5 rounded-lg border border-error-400/30 bg-error-400/10 px-4 py-3 text-sm text-error-100">
+								{failure}
+							</p>
+						)}
 
 						<Button
 							size="lg"
-							className="mt-8 h-14 w-full text-base"
+							className="mt-8 h-14 w-full gap-2 text-base"
+							isLoading={prepare.isPending}
+							loadingLabel="Preparing your contribution"
+							disabled={!p}
 							onClick={() => {
 								setTouched(true);
-								if (!amountError) setStep("review");
+								if (amountError) return;
+								requireWallet(() => void toReview(), "Connect the wallet you want to contribute from.");
 							}}
 						>
-							Continue
+							{!address && <Wallet className="size-4" />} {address ? "Continue" : "Connect wallet and continue"}
 						</Button>
 					</div>
 				)}
 
-				{step === "review" && p && (
-					<div className="animate-page">
-						<h2 className="font-display text-xl font-bold">Review your contribution</h2>
-						<dl className="mt-5 divide-y divide-white/10 rounded-xl border border-white/10">
-							<Row label="Amount">
-								<span className="font-display text-xl font-bold">
-									{formatAmount(trimmed, 7)} {asset.code}
-								</span>
-							</Row>
-							<Row label="Asset">
-								{asset.label}
-								{asset.issuer && (
-									<AddressChip value={asset.issuer} head={5} tail={5} className="mt-0.5 block text-xs text-white/60" />
-								)}
-							</Row>
-							<Row label="To (project wallet)">
-								<AddressChip value={p.destination_address!} head={8} tail={6} className="text-sm" />
-							</Row>
-							<Row label="From (your wallet)">
-								{address ? (
-									<AddressChip value={address} head={8} tail={6} className="text-sm" />
-								) : (
-									<span className="text-white/55">You’ll connect it next</span>
-								)}
-							</Row>
-							<Row label="Network">Stellar Testnet</Row>
-							<Row label="Network fee">≈ 0.00001 XLM, paid from your wallet</Row>
-							<Row label="Memo">A reference like CSP-XXXXXX is added so we can match your payment</Row>
-						</dl>
-						<ul className="mt-5 flex flex-col gap-2.5 text-sm leading-6 text-white/75">
-							<li className="flex gap-2.5">
-								<ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary-300" aria-hidden /> The payment goes straight from
-								your wallet to the project. Chucksales never holds funds.
-							</li>
-							<li className="flex gap-2.5">
-								<Info className="mt-0.5 size-4 shrink-0 text-primary-300" aria-hidden /> Stellar payments are public: your wallet
-								address and the amount will be visible on-chain and on this project.
-							</li>
-							<li className="flex gap-2.5">
-								<AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning-200" aria-hidden /> Payments are final and can’t be
-								refunded. Approval isn’t a guarantee the project will succeed.
-							</li>
-						</ul>
-						<label className="mt-6 flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 px-4 py-3.5 text-sm">
-							<input
-								type="checkbox"
-								checked={agreed}
-								onChange={(e) => setAgreed(e.target.checked)}
-								className="mt-0.5 size-4 accent-primary-500"
-							/>
-							<span>
-								I understand this is a contribution to support the project, not a purchase, and it can’t be reversed.{" "}
-								<Link href={routes.risk} className="text-primary-300 hover:underline">
-									Risk disclosure
-								</Link>
-							</span>
-						</label>
-						<div className="mt-7 flex flex-col-reverse gap-3 sm:flex-row">
-							<Button variant="ghost" className="h-14 sm:w-40" onClick={() => setStep("amount")}>
-								Back
-							</Button>
-							<Button
-								size="lg"
-								className="h-14 flex-1 gap-2 text-base"
-								disabled={!agreed}
-								onClick={() => requireWallet((wallet) => void send(wallet), "Connect the wallet you want to contribute from.")}
-							>
-								<Wallet className="size-4" /> {address ? "Confirm and sign" : "Connect wallet and sign"}
-							</Button>
-						</div>
-					</div>
+				{step === "review" && p && prepared && (
+					<ReviewStep
+						prepared={prepared}
+						explorerUrl={network.data?.explorerUrl}
+						agreed={agreed}
+						setAgreed={setAgreed}
+						onBack={() => setStep("amount")}
+						onSign={() => void signAndSubmit(prepared)}
+						onExpired={() => {
+							notify.info("That took a while", "The payment expired before it was signed. Prepare it again.");
+							setPrepared(null);
+							setStep("amount");
+						}}
+					/>
 				)}
 
 				{step === "sign" && (
@@ -393,29 +322,31 @@ export function ContributeView({ slug }: { slug: string }) {
 										<Wallet className="size-7" aria-hidden />
 									</span>
 									<h2 className="mt-5 font-display text-xl font-bold">
-										{phase === "wallet" ? "Approve in your wallet" : "Working on it…"}
+										{phase === "wallet" ? "Approve in your wallet" : "Sending to Stellar…"}
 									</h2>
 									<p className="mt-1.5 max-w-[380px] text-sm text-white/60">
-										{phase === "wallet"
-											? "Check your wallet: it’s asking you to approve this payment."
-											: "Don’t close this page."}
+										{phase === "wallet" ? "Check your wallet: it’s asking you to approve this payment." : "Don’t close this page."}
 									</p>
 								</div>
 								<ol className="mx-auto mt-7 flex max-w-[420px] flex-col gap-3">
-									{PHASES.filter((ph) => walletId !== "demo" || (ph.id !== "build" && ph.id !== "submit")).map((ph) => {
-										const order = PHASES.findIndex((x) => x.id === phase);
-										const mine = PHASES.findIndex((x) => x.id === ph.id);
+									{(
+										[
+											{ id: "wallet", label: "Waiting for you to approve in your wallet" },
+											{ id: "submit", label: "Submitting to Stellar and confirming" },
+										] as const
+									).map((ph, i) => {
+										const order = phase === "wallet" ? 0 : 1;
 										return (
 											<li
 												key={ph.id}
 												className={cn(
 													"flex items-center gap-3 text-sm transition-colors",
-													mine < order ? "text-success-200" : mine === order ? "text-white" : "text-white/40",
+													i < order ? "text-success-200" : i === order ? "text-white" : "text-white/40",
 												)}
 											>
-												{mine < order ? (
+												{i < order ? (
 													<Check className="size-4" />
-												) : mine === order ? (
+												) : i === order ? (
 													<Loader2 className="size-4 animate-spin" />
 												) : (
 													<span className="size-4 rounded-full border border-white/25" />
@@ -428,51 +359,27 @@ export function ContributeView({ slug }: { slug: string }) {
 							</>
 						) : (
 							<div className="flex flex-col items-center text-center">
-								<span
-									className={cn(
-										"animate-pop flex size-16 items-center justify-center rounded-full",
-										failure.unknown || failure.hash ? "bg-warning-400/15 text-warning-200" : "bg-error-400/15 text-error-200",
-									)}
-								>
+								<span className="animate-pop flex size-16 items-center justify-center rounded-full bg-error-400/15 text-error-200">
 									<AlertTriangle className="size-7" aria-hidden />
 								</span>
-								<h2 className="mt-5 font-display text-xl font-bold">
-									{failure.hash
-										? "Sent, but not recorded yet"
-										: failure.unknown
-											? "We can’t confirm what happened"
-											: "That didn’t go through"}
-								</h2>
-								<p className="mt-2 max-w-[440px] text-sm leading-6 text-white/70">{failure.message}</p>
-								{failure.unknown && !failure.hash && (
-									<p className="mt-2 max-w-[440px] text-sm text-white/60">
-										Don’t send it again yet: check your wallet’s history (or the explorer) for this payment first.
-									</p>
-								)}
+								<h2 className="mt-5 font-display text-xl font-bold">That didn’t go through</h2>
+								<p className="mt-2 max-w-[440px] text-sm leading-6 text-white/70">{failure}</p>
 								<div className="mt-7 flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
-									{failure.hash && failure.intent ? (
-										<Button
-											className="h-12 px-6 sm:w-auto"
-											isLoading={submit.isPending}
-											loadingLabel="Recording"
-											onClick={() => void record(failure.intent!, failure.hash!)}
-										>
-											Try recording again
-										</Button>
-									) : failure.unknown ? (
-										address && (
-											<Button asChild className="h-12 px-6 sm:w-auto">
-												<Link href={routes.wallet}>Check my wallet history</Link>
-											</Button>
-										)
-									) : (
-										<Button className="h-12 px-6 sm:w-auto" onClick={() => setStep("review")}>
-											Try again
+									<Button
+										className="h-12 w-auto px-6"
+										onClick={() => {
+											setFailure(null);
+											setPrepared(null);
+											setStep("amount");
+										}}
+									>
+										Start again
+									</Button>
+									{prepared && (
+										<Button asChild variant="ghost" className="h-12 w-auto px-6">
+											<Link href={routes.contribution(prepared.id)}>Check its status</Link>
 										</Button>
 									)}
-									<Button asChild variant="ghost" className="h-12 px-6 sm:w-auto">
-										<Link href={routes.project(slug)}>Back to project</Link>
-									</Button>
 								</div>
 							</div>
 						)}
@@ -486,6 +393,138 @@ export function ContributeView({ slug }: { slug: string }) {
 				</p>
 			)}
 		</div>
+	);
+}
+
+function ReviewStep({
+	prepared: c,
+	explorerUrl,
+	agreed,
+	setAgreed,
+	onBack,
+	onSign,
+	onExpired,
+}: {
+	prepared: PreparedContribution;
+	explorerUrl?: string;
+	agreed: boolean;
+	setAgreed: (v: boolean) => void;
+	onBack: () => void;
+	onSign: () => void;
+	onExpired: () => void;
+}) {
+	const left = useSecondsLeft(c.expiresAt);
+	useEffect(() => {
+		if (left === 0) onExpired();
+	}, [left, onExpired]);
+
+	return (
+		<div className="animate-page">
+			<div className="flex flex-wrap items-center justify-between gap-3">
+				<h2 className="font-display text-xl font-bold">Review your contribution</h2>
+				{left !== null && (
+					<span
+						className={cn(
+							"inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs tabular-nums",
+							left < 60 ? "bg-warning-400/15 text-warning-200" : "bg-white/5 text-white/70",
+						)}
+					>
+						<Clock className="size-3.5" aria-hidden /> Sign within {Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}
+					</span>
+				)}
+			</div>
+			<dl className="mt-5 divide-y divide-white/10 rounded-xl border border-white/10">
+				<Row label="Project">{c.project.title}</Row>
+				<Row label="Amount">
+					<span className="font-display text-xl font-bold">
+						{formatAmount(c.amount, 7)} {c.asset.code}
+					</span>
+				</Row>
+				<Row label="Asset">
+					{c.asset.code}
+					{c.asset.issuer && (
+						<AddressChip value={c.asset.issuer} head={5} tail={5} explorerBase={explorerUrl} className="mt-0.5 block text-xs text-white/60" />
+					)}
+				</Row>
+				<Row label="To (the builder’s wallet)">
+					<AddressChip value={c.destination} head={8} tail={6} explorerBase={explorerUrl} className="text-sm" />
+				</Row>
+				<Row label="From (your wallet)">
+					<AddressChip value={c.contributorAddress} head={8} tail={6} explorerBase={explorerUrl} className="text-sm" />
+				</Row>
+				<Row label="Network">Stellar {c.network === "testnet" ? "Testnet" : "Mainnet"}</Row>
+				<Row label="Network fee">{formatAmount(c.fee, 7)} XLM, paid from your wallet</Row>
+				<Row label="Memo">
+					<span className="font-mono text-sm">{c.memo}</span>
+				</Row>
+			</dl>
+			<ul className="mt-5 flex flex-col gap-2.5 text-sm leading-6 text-white/75">
+				<li className="flex gap-2.5">
+					<ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary-300" aria-hidden /> The payment goes straight from your
+					wallet to the builder. Chucksales never holds funds.
+				</li>
+				<li className="flex gap-2.5">
+					<Info className="mt-0.5 size-4 shrink-0 text-primary-300" aria-hidden /> Stellar payments are public: your wallet
+					address and the amount will be visible on-chain and on this project.
+				</li>
+				<li className="flex gap-2.5">
+					<AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning-200" aria-hidden /> Payments are final and can’t be
+					refunded. Approval isn’t a guarantee the project will succeed.
+				</li>
+			</ul>
+			<label className="mt-6 flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 px-4 py-3.5 text-sm">
+				<input
+					type="checkbox"
+					checked={agreed}
+					onChange={(e) => setAgreed(e.target.checked)}
+					className="mt-0.5 size-4 accent-primary-500"
+				/>
+				<span>
+					I understand this is a contribution to support the project, not a purchase, and it can’t be reversed.{" "}
+					<Link href={routes.risk} className="text-primary-300 hover:underline">
+						Risk disclosure
+					</Link>
+				</span>
+			</label>
+			<div className="mt-7 flex flex-col-reverse gap-3 sm:flex-row">
+				<Button variant="ghost" className="h-14 sm:w-40" onClick={onBack}>
+					Back
+				</Button>
+				<Button size="lg" className="h-14 flex-1 gap-2 text-base" disabled={!agreed} onClick={onSign}>
+					<Wallet className="size-4" /> Confirm and sign
+				</Button>
+			</div>
+		</div>
+	);
+}
+
+/** Seconds until `iso`, ticking; null before mount. */
+function useSecondsLeft(iso: string) {
+	const [left, setLeft] = useState<number | null>(null);
+	useEffect(() => {
+		const tick = () => setLeft(Math.max(0, Math.round((Date.parse(iso) - Date.now()) / 1000)));
+		const first = setTimeout(tick, 0);
+		const t = setInterval(tick, 1000);
+		return () => {
+			clearTimeout(first);
+			clearInterval(t);
+		};
+	}, [iso]);
+	return left;
+}
+
+export function AssetIcon({ asset, className }: { asset: Pick<StellarAsset, "code" | "native">; className?: string }) {
+	return (
+		<span
+			aria-hidden
+			className={cn(
+				"flex size-10 shrink-0 items-center justify-center rounded-full text-sm font-bold",
+				asset.native ? "bg-white text-black" : asset.code === "USDC" ? "bg-[#2775CA] text-white" : "bg-primary-500 text-white",
+				className,
+			)}
+		>
+			{asset.native ? "✦" : asset.code === "USDC" ? "$" : asset.code.slice(0, 1)}
+		</span>
 	);
 }
 

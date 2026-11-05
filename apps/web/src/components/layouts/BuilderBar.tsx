@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
 import { ExternalLink, LayoutDashboard, LogOut, PenLine, Plus } from "lucide-react";
 import {
 	DropdownMenu,
@@ -15,8 +14,7 @@ import {
 import { routes } from "@/lib/routes";
 import { notify } from "@/lib/use-toast";
 import { Logo } from "@/components/Logo";
-import { useBuilderSession } from "@/features/builder-auth/session";
-import { useBuilderProfile } from "@/features/builder-projects/hooks";
+import { useMe, useSignOut } from "@/features/builder-auth/hooks";
 import { NotificationPanel } from "@/features/notifications/components/NotificationPanel";
 
 /**
@@ -25,10 +23,9 @@ import { NotificationPanel } from "@/features/notifications/components/Notificat
  */
 export function BuilderBar() {
 	const router = useRouter();
-	const qc = useQueryClient();
-	const session = useBuilderSession();
-	const profile = useBuilderProfile();
-	const name = profile.data?.display_name ?? session.displayName ?? "Builder";
+	const me = useMe();
+	const signOut = useSignOut();
+	const name = me.data?.profile?.displayName || me.data?.name || "Builder";
 	const initials = name
 		.split(/\s+/)
 		.slice(0, 2)
@@ -46,14 +43,9 @@ export function BuilderBar() {
 							className="flex items-center gap-2.5 rounded-full py-1 pr-1 pl-1 transition-colors hover:bg-white/5 focus-visible:ring-2 focus-visible:ring-primary-300 focus-visible:outline-none sm:pr-3"
 							aria-label={`Account menu for ${name}`}
 						>
-							{profile.data?.avatar_url ? (
-								// eslint-disable-next-line @next/next/no-img-element
-								<img src={profile.data.avatar_url} alt="" className="size-9 rounded-full object-cover" />
-							) : (
-								<span className="flex size-9 items-center justify-center rounded-full bg-gradient-to-br from-primary-400 to-primary-700 text-xs font-bold">
-									{initials}
-								</span>
-							)}
+							<span className="flex size-9 items-center justify-center rounded-full bg-gradient-to-br from-primary-400 to-primary-700 text-xs font-bold">
+								{initials}
+							</span>
 							<span className="hidden max-w-[160px] truncate text-sm sm:block">{name}</span>
 						</DropdownMenuTrigger>
 						<DropdownMenuContent
@@ -63,7 +55,7 @@ export function BuilderBar() {
 						>
 							<DropdownMenuLabel className="px-2.5 py-2">
 								<span className="block truncate text-sm">{name}</span>
-								<span className="block truncate text-xs font-normal text-white/50">{profile.data?.email ?? session.email}</span>
+								<span className="block truncate text-xs font-normal text-white/50">{me.data?.email}</span>
 							</DropdownMenuLabel>
 							<DropdownMenuSeparator className="bg-white/10" />
 							{[
@@ -85,10 +77,12 @@ export function BuilderBar() {
 							<DropdownMenuSeparator className="bg-white/10" />
 							<DropdownMenuItem
 								onSelect={() => {
-									session.signOut();
-									qc.clear();
-									notify.info("Signed out");
-									router.replace(routes.signIn);
+									signOut.mutate(undefined, {
+										onSettled: () => {
+											notify.info("Signed out");
+											router.replace(routes.signIn);
+										},
+									});
 								}}
 								className="cursor-pointer gap-2.5 rounded-lg p-2.5 text-error-200 focus:bg-error-400/10 focus:text-error-100"
 							>

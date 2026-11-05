@@ -2,13 +2,13 @@
 
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { formatAmount } from "@repo/domain/money";
-import type { WalletContributions } from "@repo/domain/types";
+import type { WalletSummary } from "@/features/contributions/summary";
 
 /**
  * "Funds sent per month" (contributor page): one series, confirmed XLM only, thin rounded bars on a recessive
  * dashed grid with a hover tooltip. A screen-reader table carries the same numbers.
  */
-type Point = WalletContributions["summary"]["monthly"][number] & { value: number };
+type Point = WalletSummary["monthly"][number] & { value: number };
 
 function Tip({ active, payload }: { active?: boolean; payload?: { payload: Point }[] }) {
 	const p = payload?.[0]?.payload;
@@ -21,7 +21,7 @@ function Tip({ active, payload }: { active?: boolean; payload?: { payload: Point
 	);
 }
 
-export function SentChart({ monthly }: { monthly: WalletContributions["summary"]["monthly"] }) {
+export function SentChart({ monthly }: { monthly: WalletSummary["monthly"] }) {
 	const data: Point[] = monthly.map((m) => ({ ...m, value: Number(m.amount) }));
 	const empty = data.every((d) => d.value === 0);
 	return (

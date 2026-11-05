@@ -1,32 +1,28 @@
-import axios, { type AxiosAdapter } from "axios";
-import { useBuilderSession } from "@/features/builder-auth/session";
-import { USE_MOCK_API } from "@/lib/api/source";
+import type { AxiosAdapter } from "axios";
+import { createAccountClient, createPublicClient, createWalletClient } from "@repo/api/client";
+import { createAccountTokenStore } from "@repo/api/tokens";
+import { API_URL, USE_MOCK_API } from "@/lib/api/source";
 
-/** In mock mode every request is answered in the browser (lib/api/source.ts); the mock is loaded only then. */
+export { unwrap, cleanParams } from "@repo/api/client";
+
+/** In mock mode every request is answered in the browser; the mock is loaded only then. */
 const mockAdapter: AxiosAdapter = async (config) => (await import("@repo/mock-api/adapter")).mockAdapter(config);
-const adapter = USE_MOCK_API ? { adapter: mockAdapter } : {};
+const adapter = USE_MOCK_API ? mockAdapter : undefined;
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+/** The builder's tokens (access in memory, refresh in localStorage). */
+export const accountTokens = createAccountTokenStore("web");
 
-/** Public calls: project discovery, contributions, suggestions (wallet address goes in the body). */
-export const api = axios.create({ baseURL: BASE_URL, headers: { "Content-Type": "application/json" }, ...adapter });
+/** Builder (account) routes: Bearer access token, single-flight refresh on 401. */
+export const builderApi = createAccountClient({ baseURL: API_URL, tokens: accountTokens, adapter });
 
-/** Builder calls: adds the session token; a 401 ends the session. */
-export const builderApi = axios.create({ baseURL: BASE_URL, headers: { "Content-Type": "application/json" }, ...adapter });
+/** Public routes: discovery, categories, network info, account lookups. */
+export const api = createPublicClient({ baseURL: API_URL, adapter });
 
-builderApi.interceptors.request.use((config) => {
-	const token = useBuilderSession.getState().token;
-	if (token) config.headers.set("Authorization", `Bearer ${token}`);
-	return config;
-});
-
-builderApi.interceptors.response.use(
-	(response) => response,
-	(error) => {
-		if (axios.isAxiosError(error) && error.response?.status === 401) useBuilderSession.getState().signOut();
-		return Promise.reject(error);
+/** Contributor routes: Bearer wallet token from the SEP-10 sign-in. */
+export const walletApi = createWalletClient({
+	baseURL: API_URL,
+	adapter,
+	onWalletSessionEnd: () => {
+		void import("@/features/wallet/store").then((m) => m.useWallet.getState().endSession());
 	},
-);
-
-/** The `{ status_code, message, data }` envelope, unwrapped. */
-export const unwrap = <T>(res: { data: { data: T } }) => res.data.data;
+});

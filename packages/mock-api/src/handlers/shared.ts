@@ -1,5 +1,5 @@
-import type { AcceptedAsset, Project, PublicProject } from "@repo/domain/types";
-import { countsTowardTotal } from "@repo/domain/contribution-status";
+import type { AcceptedAsset, Project, PublicProject } from "../model";
+import { countsTowardTotal } from "../model-rules";
 import { sum } from "@repo/domain/money";
 import type { MockDb } from "../db";
 import { USDC_ISSUER } from "../util";

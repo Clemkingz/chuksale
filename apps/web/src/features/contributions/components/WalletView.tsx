@@ -4,20 +4,22 @@ import { useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import { ArrowRight, ChevronRight, ExternalLink, HandCoins, Layers, Lightbulb, ShieldCheck, Timer, Wallet } from "lucide-react";
 import { SUGGESTION_STATUS_LABEL } from "@repo/domain/labels";
-import { formatAmount, progressPercent, sum } from "@repo/domain/money";
-import type { ContributionDetail } from "@repo/domain/types";
+import { formatAmount } from "@repo/domain/money";
+import type { Contribution, ContributionStatus } from "@repo/domain/types";
 import { Button } from "@repo/ui/button";
 import { cn } from "@repo/ui/lib/utils";
 import { errorMessage } from "@/lib/api/errors";
 import { routes } from "@/lib/routes";
 import { withBasePath } from "@/lib/site";
-import { explorer, shortKey } from "@/lib/stellar/config";
+import { shortKey } from "@/lib/stellar/config";
 import { timeAgo } from "@/lib/time";
 import { AddressChip } from "@/components/AddressChip";
 import { Pager } from "@/components/Pager";
 import { ProjectLogo } from "@/components/ProjectLogo";
 import { EmptyState, ErrorState } from "@/components/States";
-import { useWalletContributions, type HistoryFilters } from "@/features/contributions/hooks";
+import { useMyContributions } from "@/features/contributions/hooks";
+import { summarize } from "@/features/contributions/summary";
+import { useNetwork } from "@/lib/stellar/network";
 import { ContributionSheet } from "@/features/contributions/components/ContributionSheet";
 import { SentChart } from "@/features/contributions/components/SentChart";
 import { ContributionStatusPill } from "@/features/contributions/components/StatusPill";
@@ -31,11 +33,11 @@ import { walletName } from "@/features/wallet/kit";
 /**
  * /wallet: the contributor page (PRD §3.2: contributors have no account; the connected wallet is their identity).
  * - Wallet card: which wallet, full address (copy + explorer), network.
- * - Live balance (Horizon Testnet; simulated for the Demo wallet).
- * - What it has sent: totals per asset, confirmed count, projects supported, pending; per-month chart; per-project
- *   breakdown; and the full history (filter by status/asset) with a details panel for each contribution.
- * - Its suggestions and their moderation status.
- * Only confirmed contributions count in totals (pending/failed are listed but never added up).
+ * - Balances for each accepted asset (`/stellar/accounts`).
+ * - What it has sent (`/contributions/mine`): confirmed totals per asset, counts, per-month chart, per-project
+ *   breakdown, and the full history (filter by status/asset) with a details panel for each contribution.
+ * - Its suggestions (`/suggestions/mine`) with their moderation status and the moderator's note.
+ * Only confirmed contributions count in totals; each asset is totalled on its own.
  */
 
 const d = (i: number) => ({ "--d": i }) as CSSProperties;
@@ -46,6 +48,8 @@ const STATUS_TABS = [
 	{ id: "pending", label: "Pending" },
 	{ id: "failed", label: "Failed" },
 ] as const;
+
+const PAGE = 8;
 
 export function WalletView() {
 	const { ready, address, walletId } = useConnectedWallet();
@@ -89,12 +93,24 @@ export function WalletView() {
 
 function ConnectedWallet({ address, walletId }: { address: string; walletId: string | null }) {
 	const demo = walletId === "demo";
-	const [f, setF] = useState<HistoryFilters>({ status: "all", asset: "", page: 1 });
-	const [open, setOpen] = useState<ContributionDetail | null>(null);
-	const history = useWalletContributions(address, demo, f);
-	const s = history.data?.summary;
+	const [f, setF] = useState<{ status: (typeof STATUS_TABS)[number]["id"]; asset: string; page: number }>({
+		status: "all",
+		asset: "",
+		page: 1,
+	});
+	const [open, setOpen] = useState<Contribution | null>(null);
+	const history = useMyContributions();
+	const network = useNetwork();
+	const all = history.data?.pages.flatMap((p) => p.result);
+	const s = all ? summarize(all) : undefined;
 	const name = demo ? DEMO_WALLET.name : walletName(walletId);
-	const totalXlm = s ? (s.total_sent.XLM ?? "0") : "0";
+	const xlmTotal = s?.totals.find((t) => t.asset.native)?.amount ?? "0";
+	const otherTotals = s?.totals.filter((t) => !t.asset.native) ?? [];
+	const statusMatch = (st: ContributionStatus) =>
+		f.status === "all" || st === f.status || (f.status === "failed" && st === "expired");
+	const filtered = all?.filter((c) => statusMatch(c.status) && (!f.asset || c.asset.id === f.asset)) ?? [];
+	const pages = Math.max(1, Math.ceil(filtered.length / PAGE));
+	const rows = filtered.slice((f.page - 1) * PAGE, f.page * PAGE);
 
 	return (
 		<div className="app-container py-8 md:py-12">
@@ -151,14 +167,18 @@ function ConnectedWallet({ address, walletId }: { address: string; walletId: str
 					<div className="mt-7 grid grid-cols-2 gap-3 border-t border-white/20 pt-5">
 						<div>
 							<p className="text-xs text-white/75">Total contributed</p>
-							<p className="mt-1 font-display text-2xl font-bold">{s ? `${formatAmount(totalXlm)} XLM` : "…"}</p>
-							{s?.total_sent.USDC && <p className="text-sm text-white/85">+ {formatAmount(s.total_sent.USDC)} USDC</p>}
+							<p className="mt-1 font-display text-2xl font-bold">{s ? `${formatAmount(xlmTotal)} XLM` : "…"}</p>
+							{otherTotals.map((t) => (
+								<p key={t.asset.id} className="text-sm text-white/85">
+									+ {formatAmount(t.amount)} {t.asset.code}
+								</p>
+							))}
 						</div>
 						<div>
 							<p className="text-xs text-white/75">Contributing since</p>
 							<p className="mt-1 font-display text-2xl font-bold">
-								{s?.first_at
-									? new Date(s.first_at).toLocaleDateString("en-GB", { month: "short", year: "numeric" })
+								{s?.firstAt
+									? new Date(s.firstAt).toLocaleDateString("en-GB", { month: "short", year: "numeric" })
 									: s
 										? "—"
 										: "…"}
@@ -176,16 +196,16 @@ function ConnectedWallet({ address, walletId }: { address: string; walletId: str
 					i={0}
 					icon={<HandCoins className="size-5" />}
 					label="XLM sent (confirmed)"
-					value={s ? formatAmount(totalXlm) : undefined}
+					value={s ? formatAmount(xlmTotal) : undefined}
 				/>
-				<Stat i={1} icon={<Layers className="size-5" />} label="Contributions confirmed" value={s?.confirmed_count} />
-				<Stat i={2} icon={<Lightbulb className="size-5" />} label="Projects supported" value={s?.projects_supported} />
+				<Stat i={1} icon={<Layers className="size-5" />} label="Contributions confirmed" value={s?.confirmedCount} />
+				<Stat i={2} icon={<Lightbulb className="size-5" />} label="Projects supported" value={s?.projectsSupported} />
 				<Stat
 					i={3}
 					icon={<Timer className="size-5" />}
 					label="Pending confirmation"
-					value={s?.pending_count}
-					tone={s?.pending_count ? "warn" : undefined}
+					value={s?.pendingCount}
+					tone={s?.pendingCount ? "warn" : undefined}
 				/>
 			</ul>
 
@@ -207,45 +227,56 @@ function ConnectedWallet({ address, walletId }: { address: string; walletId: str
 							className="rounded-2xl border border-white/10 bg-[#11121A] p-5 md:p-6"
 						>
 							<h2 id="where-title" className="font-display text-xl font-bold">
-								Where your XLM went
+								Projects you support
 							</h2>
-							<p className="mt-1 text-sm text-white/50">Confirmed contributions, by project</p>
+							<p className="mt-1 text-sm text-white/50">Confirmed contributions, by project (each asset totalled on its own)</p>
 							{!s ? (
 								<div className="mt-5 flex flex-col gap-3" aria-hidden>
 									{[0, 1, 2].map((k) => (
 										<span key={k} className="skeleton-shimmer block h-12 rounded-xl" />
 									))}
 								</div>
-							) : s.by_project.length === 0 ? (
+							) : s.byProject.length === 0 ? (
 								<p className="mt-5 rounded-xl border border-dashed border-white/10 px-4 py-8 text-center text-sm text-white/50">
 									Nothing confirmed yet.
 								</p>
 							) : (
 								<ul className="mt-5 flex flex-col gap-4">
-									{s.by_project.map((b, i) => {
-										const share = progressPercent(b.amount, sum(s.by_project.map((x) => x.amount))) ?? 0;
+									{s.byProject.map((b, i) => {
+										const share = Math.round((b.count / s.confirmedCount) * 100);
+										const inner = (
+											<>
+												<ProjectLogo title={b.project.title} src={null} className="size-10 text-xs" />
+												<div className="min-w-0 flex-1">
+													<div className="flex items-baseline justify-between gap-3">
+														<p className="truncate text-[15px] group-hover:text-primary-300">{b.project.title}</p>
+														<p className="shrink-0 text-sm font-medium tabular-nums">
+															{b.totals.map((t) => `${formatAmount(t.amount)} ${t.asset.code}`).join(" · ")}
+														</p>
+													</div>
+													<div className="mt-1.5 flex items-center gap-2">
+														<div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/10">
+															<div
+																className="h-full rounded-full bg-primary-500 transition-[width] duration-700"
+																style={{ width: `${share}%` }}
+															/>
+														</div>
+														<span className="w-24 shrink-0 text-right text-xs text-white/50 tabular-nums">
+															{b.count} contribution{b.count === 1 ? "" : "s"}
+														</span>
+													</div>
+												</div>
+											</>
+										);
 										return (
 											<li key={b.project.id} data-reveal="up" style={d(i)}>
-												<Link href={routes.project(b.project.slug)} className="group flex items-center gap-3">
-													<ProjectLogo title={b.project.title} src={b.project.logo_url} className="size-10 text-xs" />
-													<div className="min-w-0 flex-1">
-														<div className="flex items-baseline justify-between gap-3">
-															<p className="truncate text-[15px] group-hover:text-primary-300">{b.project.title}</p>
-															<p className="shrink-0 text-sm font-medium tabular-nums">{formatAmount(b.amount)} XLM</p>
-														</div>
-														<div className="mt-1.5 flex items-center gap-2">
-															<div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/10">
-																<div
-																	className="h-full rounded-full bg-primary-500 transition-[width] duration-700"
-																	style={{ width: `${share}%` }}
-																/>
-															</div>
-															<span className="w-16 shrink-0 text-right text-xs text-white/50 tabular-nums">
-																{share}% · {b.count}×
-															</span>
-														</div>
-													</div>
-												</Link>
+												{b.project.slug ? (
+													<Link href={routes.project(b.project.slug)} className="group flex items-center gap-3">
+														{inner}
+													</Link>
+												) : (
+													<div className="flex items-center gap-3">{inner}</div>
+												)}
 											</li>
 										);
 									})}
@@ -295,25 +326,24 @@ function ConnectedWallet({ address, walletId }: { address: string; walletId: str
 										<option value="" className="bg-[#131318]">
 											All assets
 										</option>
-										<option value="xlm" className="bg-[#131318]">
-											XLM
-										</option>
-										<option value="usdc" className="bg-[#131318]">
-											USDC
-										</option>
+										{network.data?.assets.map((a) => (
+											<option key={a.id} value={a.id} className="bg-[#131318]">
+												{a.code}
+											</option>
+										))}
 									</select>
 								</label>
 							</div>
 						</div>
 
-						<div className={cn("mt-5 transition-opacity", history.isPlaceholderData && "opacity-60")}>
+						<div className="mt-5">
 							{history.isPending ? (
 								<div className="flex flex-col gap-2 px-5 pb-5" aria-hidden>
 									{[0, 1, 2, 3].map((k) => (
 										<span key={k} className="skeleton-shimmer block h-14 rounded-xl" />
 									))}
 								</div>
-							) : history.data && history.data.items.length === 0 ? (
+							) : all && filtered.length === 0 ? (
 								<EmptyState
 									className="mx-5 mb-5"
 									title={f.status === "all" && !f.asset ? "No contributions yet" : "Nothing matches these filters"}
@@ -324,13 +354,13 @@ function ConnectedWallet({ address, walletId }: { address: string; walletId: str
 									}
 									action={
 										f.status === "all" && !f.asset ? (
-											<Button asChild>
+											<Button asChild className="w-auto px-6">
 												<Link href={routes.projects}>Explore projects</Link>
 											</Button>
 										) : undefined
 									}
 								/>
-							) : history.data ? (
+							) : all ? (
 								<>
 									<table className="hidden w-full text-left md:table">
 										<thead className="border-y border-white/10 text-sm text-white/55">
@@ -356,7 +386,7 @@ function ConnectedWallet({ address, walletId }: { address: string; walletId: str
 											</tr>
 										</thead>
 										<tbody>
-											{history.data.items.map((c, i) => (
+											{rows.map((c, i) => (
 												<tr
 													key={c.id}
 													data-reveal="up"
@@ -366,7 +396,7 @@ function ConnectedWallet({ address, walletId }: { address: string; walletId: str
 												>
 													<td className="px-6 py-3.5">
 														<span className="flex min-w-0 items-center gap-3">
-															<ProjectLogo title={c.project.title} src={c.project.logo_url} className="size-9 text-[11px]" />
+															<ProjectLogo title={c.project.title} src={null} className="size-9 text-[11px]" />
 															<span className="truncate">{c.project.title}</span>
 														</span>
 													</td>
@@ -383,23 +413,23 @@ function ConnectedWallet({ address, walletId }: { address: string; walletId: str
 													</td>
 													<td
 														className="px-3 text-sm whitespace-nowrap text-white/70"
-														title={new Date(c.created_at).toLocaleString()}
+														title={new Date(c.createdAt).toLocaleString()}
 													>
-														{timeAgo(c.created_at)}
+														{timeAgo(c.createdAt)}
 													</td>
 													<td className="px-3 text-sm text-white/70">
-														{c.simulated ? (
-															<span className="text-white/45">Simulated</span>
-														) : (
+														{c.status === "confirmed" || c.status === "pending" ? (
 															<a
-																href={explorer.tx(c.tx_hash)}
+																href={c.explorerUrl}
 																target="_blank"
 																rel="noopener noreferrer"
 																onClick={(e) => e.stopPropagation()}
 																className="inline-flex items-center gap-1 font-mono hover:text-primary-300"
 															>
-																{shortKey(c.tx_hash, 6, 4)} <ExternalLink className="size-3.5" />
+																{shortKey(c.txHash, 6, 4)} <ExternalLink className="size-3.5" />
 															</a>
+														) : (
+															<span className="text-white/45">Not sent</span>
 														)}
 													</td>
 													<td className="px-6 text-right">
@@ -418,14 +448,14 @@ function ConnectedWallet({ address, walletId }: { address: string; walletId: str
 									</table>
 
 									<ul className="divide-y divide-white/10 border-t border-white/10 md:hidden">
-										{history.data.items.map((c, i) => (
+										{rows.map((c, i) => (
 											<li key={c.id} data-reveal="up" style={d(i)}>
 												<button
 													type="button"
 													onClick={() => setOpen(c)}
 													className="flex w-full items-center gap-3 px-5 py-4 text-left"
 												>
-													<ProjectLogo title={c.project.title} src={c.project.logo_url} className="size-10 text-xs" />
+													<ProjectLogo title={c.project.title} src={null} className="size-10 text-xs" />
 													<span className="min-w-0 flex-1">
 														<span className="block truncate">{c.project.title}</span>
 														<ContributionStatusPill status={c.status} className="mt-0.5 text-xs" />
@@ -439,18 +469,27 @@ function ConnectedWallet({ address, walletId }: { address: string; walletId: str
 														>
 															{formatAmount(c.amount)} {c.asset.code}
 														</span>
-														<span className="text-xs text-white/50">{timeAgo(c.created_at)}</span>
+														<span className="text-xs text-white/50">{timeAgo(c.createdAt)}</span>
 													</span>
 												</button>
 											</li>
 										))}
 									</ul>
-									<Pager
-										page={history.data.meta.page}
-										pages={history.data.meta.total_pages}
-										onPage={(page) => setF({ ...f, page })}
-										className="mt-4 mb-5 md:mt-5"
-									/>
+									<Pager page={f.page} pages={pages} onPage={(page) => setF({ ...f, page })} className="mt-4 mb-5 md:mt-5" />
+									{history.hasNextPage && (
+										<div className="mb-5 flex justify-center">
+											<Button
+												variant="outline"
+												size="sm"
+												className="w-auto px-5"
+												onClick={() => void history.fetchNextPage()}
+												isLoading={history.isFetchingNextPage}
+												loadingLabel="Loading older contributions"
+											>
+												Load older contributions
+											</Button>
+										</div>
+									)}
 								</>
 							) : null}
 						</div>
@@ -458,7 +497,7 @@ function ConnectedWallet({ address, walletId }: { address: string; walletId: str
 				</>
 			)}
 
-			<MySuggestions address={address} />
+			<MySuggestions />
 			<ContributionSheet c={open} onClose={() => setOpen(null)} />
 		</div>
 	);
@@ -496,9 +535,10 @@ function Stat({
 	);
 }
 
-function MySuggestions({ address }: { address: string }) {
-	const q = useMySuggestions(address);
-	if (!q.data || q.data.length === 0) return null;
+function MySuggestions() {
+	const q = useMySuggestions();
+	const list = q.data?.result ?? [];
+	if (list.length === 0) return null;
 	return (
 		<section
 			aria-labelledby="my-suggestions"
@@ -509,10 +549,10 @@ function MySuggestions({ address }: { address: string }) {
 				My suggestions
 			</h2>
 			<ul className="mt-4 grid gap-3 md:grid-cols-2">
-				{q.data.slice(0, 6).map((s) => (
+				{list.slice(0, 6).map((s) => (
 					<li key={s.id}>
 						<Link
-							href={routes.project(s.project.slug)}
+							href={s.project.slug ? routes.project(s.project.slug) : routes.projects}
 							className="group block rounded-xl bg-white/[0.04] px-4 py-3 transition-colors hover:bg-white/[0.07]"
 						>
 							<p
@@ -520,7 +560,7 @@ function MySuggestions({ address }: { address: string }) {
 									"text-xs",
 									s.status === "published"
 										? "text-success-200"
-										: s.status === "pending_moderation"
+										: s.status === "pending"
 											? "text-warning-200"
 											: "text-white/50",
 								)}
@@ -528,8 +568,14 @@ function MySuggestions({ address }: { address: string }) {
 								{SUGGESTION_STATUS_LABEL[s.status]}
 							</p>
 							<p className="mt-1 truncate font-medium">{s.title}</p>
+							{s.moderationNote && (s.status === "rejected" || s.status === "hidden") && (
+								<p className="mt-1 text-xs leading-5 whitespace-pre-line text-white/65">
+									<span className="text-white/45">Moderator: </span>
+									{s.moderationNote}
+								</p>
+							)}
 							<p className="mt-0.5 flex items-center gap-1 text-xs text-white/50">
-								{s.project.title} · {timeAgo(s.created_at)}{" "}
+								{s.project.title} · {timeAgo(s.createdAt)}{" "}
 								<ArrowRight className="size-3 opacity-0 transition-opacity group-hover:opacity-100" />
 							</p>
 						</Link>

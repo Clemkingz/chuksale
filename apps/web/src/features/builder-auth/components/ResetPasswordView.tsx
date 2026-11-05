@@ -13,7 +13,7 @@ import { notify } from "@/lib/use-toast";
 import { AuthTitle } from "@/features/builder-auth/components/AuthShell";
 import { FormError, PasswordField, PasswordRules } from "@/components/forms/Fields";
 import { OtpPanel } from "@/features/builder-auth/components/OtpPanel";
-import { useResendOtp, useVerifyOtp } from "@/features/builder-auth/hooks";
+import { useForgotPassword, useResetPassword } from "@/features/builder-auth/hooks";
 import { resetSchema, type ResetValues } from "@/features/builder-auth/schema";
 
 /** Step 1: the emailed code (A2 layout). Step 2: the new password. A bad code sends you back to step 1. */
@@ -22,8 +22,8 @@ export function ResetPasswordView() {
 	const email = useSearchParams().get("email") ?? "";
 	const [code, setCode] = useState<string | null>(null);
 	const [codeError, setCodeError] = useState<string | null>(null);
-	const reset = useVerifyOtp("reset_password");
-	const resend = useResendOtp("reset_password");
+	const reset = useResetPassword();
+	const resend = useForgotPassword();
 	const form = useForm<ResetValues>({
 		resolver: zodResolver(resetSchema),
 		defaultValues: { password: "", confirm_password: "" },
@@ -59,10 +59,10 @@ export function ResetPasswordView() {
 
 	const onSubmit = form.handleSubmit(({ password }) =>
 		reset.mutate(
-			{ email, code, password },
+			{ email, otp: code, newPassword: password },
 			{
 				onSuccess: () => {
-					notify.success("Password updated", "Sign in with your new password.");
+					notify.success("Password updated", "You’ve been signed out everywhere. Sign in with your new password.");
 					router.replace(`${routes.signIn}?email=${encodeURIComponent(email)}`);
 				},
 				onError: (error) => {

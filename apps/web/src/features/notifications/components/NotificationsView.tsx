@@ -2,17 +2,17 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { BellOff, Wallet } from "lucide-react";
+import { BellOff, LogIn } from "lucide-react";
 import { Button } from "@repo/ui/button";
 import { cn } from "@repo/ui/lib/utils";
 import { errorMessage } from "@/lib/api/errors";
 import { routes } from "@/lib/routes";
 import { EmptyState, ErrorState } from "@/components/States";
-import { useWalletDialog } from "@/features/wallet/dialog-store";
+import { useSignedIn } from "@/features/builder-auth/session";
 import { NotificationCard, NotificationCardSkeleton } from "@/features/notifications/components/NotificationCard";
 import {
-	useInboxIdentity,
 	useMarkAllRead,
+	useUnreadCount,
 	useMarkRead,
 	useNotifications,
 	type NotificationFilter,
@@ -21,32 +21,22 @@ import {
 const FILTERS: { id: NotificationFilter; label: string }[] = [
 	{ id: "all", label: "All" },
 	{ id: "unread", label: "Unread" },
-	{ id: "projects", label: "Projects" },
-	{ id: "contributions", label: "Contributions" },
-	{ id: "suggestions", label: "Suggestions" },
 ];
 
 const EMPTY_COPY: Record<NotificationFilter, string> = {
-	all: "When projects open, your contributions confirm or builders review your suggestions, you’ll see it here.",
+	all: "Review decisions on your projects and first contributions show up here.",
 	unread: "You’re all caught up. New updates will show up here.",
-	projects: "No project updates yet.",
-	contributions: "No contribution updates yet. Confirmed and failed contributions show up here.",
-	suggestions: "No suggestion updates yet.",
-	account: "No account updates yet.",
 };
 
 /** Design: "Notifications" heading, an "All" chip (outlined when active), then a stack of cards. */
 export function NotificationsView() {
 	const [filter, setFilter] = useState<NotificationFilter>("all");
-	const identity = useInboxIdentity();
+	const signedIn = useSignedIn();
 	const query = useNotifications(filter);
 	const markRead = useMarkRead();
 	const markAll = useMarkAllRead();
-	const showWallet = useWalletDialog((s) => s.show);
-
-	const first = query.data?.pages[0];
-	const items = query.data?.pages.flatMap((p) => p.items) ?? [];
-	const unread = first?.unread_count ?? 0;
+	const { data: unread = 0 } = useUnreadCount();
+	const items = query.data?.pages.flatMap((p) => p.result) ?? [];
 
 	return (
 		<section className="app-container animate-page max-w-[1030px] py-12 md:py-[90px]">
@@ -93,36 +83,20 @@ export function NotificationsView() {
 				})}
 			</div>
 
-			{identity.ready && !identity.wallet && (
+			{signedIn === false && (
 				<div className="animate-rise mt-6 flex flex-col gap-3 rounded-xl border border-primary-500/30 bg-primary-500/10 p-4 sm:flex-row sm:items-center sm:justify-between">
 					<p className="flex items-start gap-3 text-sm leading-6 text-white/85">
-						<Wallet className="mt-0.5 size-5 shrink-0 text-primary-400" aria-hidden />
-						<span>
-							Connect a wallet to see updates on your contributions and suggestions.
-							{!identity.signedIn && (
-								<>
-									{" "}
-									Builders can{" "}
-									<Link href={routes.signIn} className="text-primary-300 underline-offset-4 hover:underline">
-										sign in
-									</Link>{" "}
-									for project updates.
-								</>
-							)}
-						</span>
+						<LogIn className="mt-0.5 size-5 shrink-0 text-primary-400" aria-hidden />
+						Notifications are for builders: review decisions and first contributions on your projects.
 					</p>
-					<Button
-						size="sm"
-						className="shrink-0"
-						onClick={() => showWallet("Connect your wallet to see notifications about your contributions and suggestions.")}
-					>
-						Connect wallet
+					<Button asChild size="sm" className="w-auto shrink-0 px-5">
+						<Link href={`${routes.signIn}?next=${encodeURIComponent(routes.notifications)}`}>Builder sign in</Link>
 					</Button>
 				</div>
 			)}
 
 			<div className="mt-6 flex flex-col gap-3 md:mt-8 md:gap-6" aria-live="polite" aria-busy={query.isPending}>
-				{query.isPending ? (
+				{signedIn === false ? null : query.isPending ? (
 					Array.from({ length: 4 }, (_, i) => <NotificationCardSkeleton key={i} />)
 				) : query.isError ? (
 					<ErrorState
@@ -139,7 +113,7 @@ export function NotificationsView() {
 					/>
 				) : (
 					items.map((n, i) => (
-						<NotificationCard key={n.id} notification={n} index={i} onOpen={() => !n.read_at && markRead.mutate(n.id)} />
+						<NotificationCard key={n.id} notification={n} index={i} onOpen={() => !n.readAt && markRead.mutate(n.id)} />
 					))
 				)}
 			</div>

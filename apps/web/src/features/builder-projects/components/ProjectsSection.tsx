@@ -4,7 +4,7 @@ import { useEffect, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight, FolderPlus, SearchX, Search, X } from "lucide-react";
-import type { BuilderProjectGroup } from "@repo/domain/project-status";
+import { inBuilderGroup, type BuilderProjectGroup } from "@repo/domain/project-status";
 import { Button } from "@repo/ui/button";
 import { cn } from "@repo/ui/lib/utils";
 import { errorMessage } from "@/lib/api/errors";
@@ -24,6 +24,8 @@ const TABS: { id: BuilderProjectGroup; label: string; empty: string }[] = [
 	{ id: "pending", label: "Pending projects", empty: "Nothing waiting on review" },
 	{ id: "completed", label: "Completed projects", empty: "No approved projects yet" },
 ];
+
+const PAGE_SIZE = 6;
 
 const isGroup = (v: string | null): v is BuilderProjectGroup => TABS.some((t) => t.id === v);
 
@@ -45,8 +47,15 @@ export function ProjectsSection() {
 		router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
 	};
 
-	const projects = useBuilderProjects({ group: tab, q, page });
-	const data = projects.data;
+	// One request for every project (the API has no group/search filters); the tabs, search and pages are local.
+	const projects = useBuilderProjects();
+	const all = projects.data?.result;
+	const matched = all?.filter((p) => inBuilderGroup(p.status, tab) && (!q || p.title.toLowerCase().includes(q.toLowerCase())));
+	const data = matched && {
+		items: matched.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+		meta: { page, total: matched.length, total_pages: Math.max(1, Math.ceil(matched.length / PAGE_SIZE)) },
+		has_any: (all?.length ?? 0) > 0,
+	};
 	const noProjectsAtAll = data && !data.has_any;
 
 	// If the page is past the end (a project moved tab), step back to the last page.
@@ -132,7 +141,7 @@ export function ProjectsSection() {
 					)
 				) : data ? (
 					<>
-						<ProjectsTable items={data.items} total={data.meta.total} dimmed={projects.isPlaceholderData} />
+						<ProjectsTable items={data.items} total={data.meta.total} dimmed={projects.isFetching && !projects.isPending} />
 						{data.meta.total_pages > 1 && (
 							<Pager page={data.meta.page} pages={data.meta.total_pages} onPage={(p) => setParams({ page: p })} />
 						)}

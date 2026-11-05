@@ -30,7 +30,8 @@
 		"recharts": "^2.15.4",
 		"zod": "^4.6.5",
 		"zustand": "^5.0.15",
-		"@repo/domain": "workspace:*"
+		"@repo/domain": "workspace:*",
+		"@repo/api": "workspace:*"
 	},
 	"devDependencies": {
 		"@tailwindcss/postcss": "^4.3.3",

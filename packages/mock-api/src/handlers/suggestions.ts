@@ -1,5 +1,5 @@
-import type { Report, Suggestion, SuggestionType } from "@repo/domain/types";
-import { isPubliclyVisible } from "@repo/domain/project-status";
+import type { Report, Suggestion, SuggestionType } from "../model";
+import { isPubliclyVisible } from "../model-rules";
 import { read, update } from "../db";
 import { HttpError, ok, route } from "../router";
 import { iso, paginate, uuid } from "../util";

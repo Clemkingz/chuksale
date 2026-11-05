@@ -1,5 +1,5 @@
 import { AxiosError, AxiosHeaders, type AxiosResponse, type InternalAxiosRequestConfig } from "axios";
-import { InvalidTransitionError, ReasonRequiredError } from "@repo/domain/project-status";
+import { InvalidTransitionError, ReasonRequiredError } from "./model-rules";
 import { HttpError, RawBody, dispatch } from "./router";
 import { settleContributions } from "./handlers/contributions";
 import { getControls } from "./controls";

@@ -7,8 +7,8 @@ import type {
 	Project,
 	ProjectStatus,
 	ReviewDecision,
-} from "@repo/domain/types";
-import { countsTowardTotal } from "@repo/domain/contribution-status";
+} from "../model";
+import { countsTowardTotal } from "../model-rules";
 import { compare, progressPercent, sum, toStroops } from "@repo/domain/money";
 import {
 	adminDecisions,
@@ -17,7 +17,7 @@ import {
 	isPubliclyVisible,
 	transition,
 	type AdminProjectTab,
-} from "@repo/domain/project-status";
+} from "../model-rules";
 import { read, update, type MockDb, type MockUser } from "../db";
 import { HttpError, TOKEN_PREFIX, ok, route } from "../router";
 import { DEMO_ADMIN_EMAIL } from "../seed";

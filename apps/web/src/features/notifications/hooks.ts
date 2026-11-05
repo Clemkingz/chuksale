@@ -2,83 +2,65 @@
 
 import { useEffect, useRef } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
-import type { Notification, NotificationCategory, Paginated } from "@repo/domain/types";
+import type { AppNotification, Page } from "@repo/domain/types";
 import { builderApi, unwrap } from "@/lib/api/client";
 import { notify } from "@/lib/use-toast";
-import { useBuilderSession } from "@/features/builder-auth/session";
-import { useConnectedWallet } from "@/features/wallet/hooks";
+import { useSignedIn } from "@/features/builder-auth/session";
 
 /**
- * Notifications for whoever is reading: the signed-in builder (token, via builderApi) and/or the connected wallet
- * (`?wallet=`). Contract: docs/API.md § Notifications. The unread count polls every 20 s; a rise shows a toast.
+ * The builder's in-app inbox (backend guide, "Notifications"). Wallets have no inbox. The unread count polls every
+ * minute and when the tab regains focus; a rise shows a toast.
  */
 
-export type NotificationFilter = "all" | "unread" | NotificationCategory;
-
-type Page = Paginated<Notification> & { unread_count: number; personalised: boolean };
+export type NotificationFilter = "all" | "unread";
 
 const PAGE_SIZE = 10;
-const POLL_MS = 20_000;
-
-export function useInboxIdentity() {
-	const { ready, address } = useConnectedWallet();
-	const token = useBuilderSession((s) => s.token);
-	const userId = useBuilderSession((s) => s.userId);
-	return { ready, wallet: address, signedIn: !!token, key: `${userId ?? "-"}:${address ?? "-"}` };
-}
+const POLL_MS = 60_000;
 
 const keys = {
 	all: ["notifications"] as const,
-	list: (identity: string, filter: NotificationFilter) => ["notifications", "list", identity, filter] as const,
-	unread: (identity: string) => ["notifications", "unread", identity] as const,
+	list: (filter: NotificationFilter) => ["notifications", "list", filter] as const,
+	unread: ["notifications", "unread"] as const,
 };
 
-export function useNotifications(filter: NotificationFilter) {
-	const { ready, wallet, key } = useInboxIdentity();
+export function useNotifications(filter: NotificationFilter, limit = PAGE_SIZE) {
+	const signedIn = useSignedIn();
 	return useInfiniteQuery({
-		queryKey: keys.list(key, filter),
-		enabled: ready,
-		initialPageParam: 1,
+		queryKey: [...keys.list(filter), limit],
+		enabled: !!signedIn,
+		initialPageParam: 0,
 		queryFn: async ({ pageParam }) =>
-			unwrap<Page>(
+			unwrap<Page<AppNotification>>(
 				await builderApi.get("/notifications", {
-					params: {
-						wallet: wallet ?? undefined,
-						page: pageParam,
-						limit: PAGE_SIZE,
-						status: filter === "unread" ? "unread" : undefined,
-						category: filter !== "all" && filter !== "unread" ? filter : undefined,
-					},
+					params: { limit, offset: pageParam, ...(filter === "unread" ? { unread: true } : {}) },
 				}),
 			),
-		getNextPageParam: (last) => (last.meta.page < last.meta.total_pages ? last.meta.page + 1 : undefined),
+		getNextPageParam: (last, _all, offset) => (last.paginationMeta.nextPage ? offset + limit : undefined),
 	});
 }
 
 /** Unread badge count; toasts when it goes up while the app is open. */
 export function useUnreadCount() {
-	const { ready, wallet, key } = useInboxIdentity();
+	const signedIn = useSignedIn();
 	const query = useQuery({
-		queryKey: keys.unread(key),
-		enabled: ready,
+		queryKey: keys.unread,
+		enabled: !!signedIn,
 		refetchInterval: POLL_MS,
-		queryFn: async () =>
-			unwrap<{ unread_count: number }>(
-				await builderApi.get("/notifications/unread-count", { params: { wallet: wallet ?? undefined } }),
-			).unread_count,
+		refetchOnWindowFocus: true,
+		queryFn: async () => unwrap<{ count: number }>(await builderApi.get("/notifications/unread-count")).count,
 	});
 
-	const previous = useRef<{ key: string; count: number } | null>(null);
+	const previous = useRef<number | null>(null);
 	const qc = useQueryClient();
 	useEffect(() => {
 		if (query.data === undefined) return;
 		const before = previous.current;
-		previous.current = { key, count: query.data };
-		if (before && before.key === key && query.data > before.count) {
+		previous.current = query.data;
+		if (before !== null && query.data > before) {
 			notify.info("You have a new notification", "Open notifications to see it.");
 			void qc.invalidateQueries({ queryKey: ["notifications", "list"] });
 		}
-	}, [query.data, key, qc]);
+	}, [query.data, qc]);
 
 	return query;
 }
@@ -86,23 +68,22 @@ export function useUnreadCount() {
 /** Marks one as read, optimistically (the dot and badge update before the request lands). */
 export function useMarkRead() {
 	const qc = useQueryClient();
-	const { wallet, key } = useInboxIdentity();
 	return useMutation({
-		mutationFn: async (id: string) => builderApi.post(`/notifications/${id}/read`, { wallet }),
+		mutationFn: async (id: string) => unwrap<AppNotification>(await builderApi.post(`/notifications/${id}/read`)),
 		onMutate: async (id) => {
 			await qc.cancelQueries({ queryKey: keys.all });
-			qc.setQueriesData<InfiniteData<Page>>({ queryKey: ["notifications", "list", key] }, (data) =>
+			qc.setQueriesData<InfiniteData<Page<AppNotification>>>({ queryKey: ["notifications", "list"] }, (data) =>
 				data
 					? {
 							...data,
 							pages: data.pages.map((p) => ({
 								...p,
-								items: p.items.map((n) => (n.id === id && !n.read_at ? { ...n, read_at: new Date().toISOString() } : n)),
+								result: p.result.map((n) => (n.id === id && !n.readAt ? { ...n, readAt: new Date().toISOString() } : n)),
 							})),
 						}
 					: data,
 			);
-			qc.setQueryData<number>(keys.unread(key), (n) => (n ? n - 1 : n));
+			qc.setQueryData<number>(keys.unread, (n) => (n ? n - 1 : n));
 		},
 		onSettled: () => qc.invalidateQueries({ queryKey: keys.all }),
 	});
@@ -110,9 +91,8 @@ export function useMarkRead() {
 
 export function useMarkAllRead() {
 	const qc = useQueryClient();
-	const { wallet } = useInboxIdentity();
 	return useMutation({
-		mutationFn: async () => unwrap<{ updated: number }>(await builderApi.post("/notifications/read-all", { wallet })),
+		mutationFn: async () => unwrap<{ updated: number }>(await builderApi.post("/notifications/read-all")),
 		onSuccess: () => notify.success("You’re all caught up"),
 		onError: (error) => notify.fromError(error, "Couldn’t mark notifications as read."),
 		onSettled: () => qc.invalidateQueries({ queryKey: keys.all }),

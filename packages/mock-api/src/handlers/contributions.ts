@@ -1,7 +1,7 @@
-import type { ContributionDetail, ContributionIntent, WalletContributions } from "@repo/domain/types";
-import { countsTowardTotal } from "@repo/domain/contribution-status";
+import type { ContributionDetail, ContributionIntent, WalletContributions } from "../model";
+import { countsTowardTotal } from "../model-rules";
 import { compare, isValidAmount, subtract, sum } from "@repo/domain/money";
-import { acceptsContributions } from "@repo/domain/project-status";
+import { acceptsContributions } from "../model-rules";
 import { read, update, type MockContribution, type MockDb } from "../db";
 import { HttpError, ok, route } from "../router";
 import { DAY, hex, iso, paginate, uuid } from "../util";

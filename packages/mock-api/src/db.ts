@@ -13,7 +13,7 @@ import type {
 	Report,
 	Suggestion,
 	User,
-} from "@repo/domain/types";
+} from "./model";
 import { buildSeed } from "./seed";
 
 /**

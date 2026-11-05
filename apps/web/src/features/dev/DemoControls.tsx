@@ -7,10 +7,9 @@ import { getControls, setControls, type MockControls, type WalletScenario } from
 import { Button } from "@repo/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@repo/ui/popover";
 import { cn } from "@repo/ui/lib/utils";
-import { builderApi } from "@/lib/api/client";
+import { accountTokens, builderApi } from "@/lib/api/client";
 import { resetDemoData } from "@/lib/api/source";
 import { notify } from "@/lib/use-toast";
-import { useBuilderSession } from "@/features/builder-auth/session";
 import { useWallet } from "@/features/wallet/store";
 
 /**
@@ -35,7 +34,7 @@ export function DemoControls() {
 	async function push() {
 		setPushing(true);
 		try {
-			await builderApi.post("/mock/notifications/push", { wallet: useWallet.getState().address });
+			await builderApi.post("/mock/notifications/push");
 			await qc.invalidateQueries({ queryKey: ["notifications"] });
 		} catch (e) {
 			notify.fromError(e);
@@ -46,7 +45,7 @@ export function DemoControls() {
 
 	async function reset() {
 		await resetDemoData();
-		useBuilderSession.getState().signOut();
+		accountTokens.clear();
 		useWallet.getState().clear();
 		qc.clear();
 		notify.success("Demo data reset", "Signed out and wallet disconnected.");

@@ -1,35 +1,34 @@
 "use client";
 
-import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { useSyncExternalStore } from "react";
+import type { AuthTokens } from "@repo/domain/types";
+import { accountTokens, builderApi } from "@/lib/api/client";
 
 /**
- * The builder's session (email + password auth, decision D6). Mock tokens look like `mock.<userId>.<rand>`.
- * Contributors never get one: their identity is the wallet (features/wallet).
+ * The builder's session is the token store (backend guide, "Tokens"): access token in memory, single-use refresh
+ * token in localStorage. Who is signed in comes from `GET /auth/me` (`useMe`). Contributors never get one: their
+ * identity is the wallet (features/wallet).
  */
-interface BuilderSession {
-	token: string | null;
-	userId: string | null;
-	email: string | null;
-	displayName: string | null;
-	expiresAt: number | null;
-	signIn: (session: { token: string; userId: string; email: string; displayName: string; expiresAt: number }) => void;
-	signOut: () => void;
+
+const subscribe = (cb: () => void) => accountTokens.subscribe(cb);
+
+/** true / false once mounted; null while server-rendering (no storage there). */
+export function useSignedIn(): boolean | null {
+	return useSyncExternalStore(
+		subscribe,
+		() => accountTokens.hasSession() && accountTokens.getRole() !== "admin",
+		() => null,
+	);
 }
 
-export const useBuilderSession = create<BuilderSession>()(
-	persist(
-		(set) => ({
-			token: null,
-			userId: null,
-			email: null,
-			displayName: null,
-			expiresAt: null,
-			signIn: (session) => set(session),
-			signOut: () => set({ token: null, userId: null, email: null, displayName: null, expiresAt: null }),
-		}),
-		{ name: "csp-builder-session" },
-	),
-);
+export function startSession(tokens: AuthTokens) {
+	accountTokens.save(tokens);
+	return tokens;
+}
 
-export const isExpired = (expiresAt: number | null) => !expiresAt || expiresAt <= Date.now();
+/** Signs out this device. The server revokes the session even if the call fails midway; it always answers 204. */
+export async function signOut() {
+	const refreshToken = accountTokens.getRefreshToken();
+	accountTokens.clear();
+	if (refreshToken) await builderApi.post("/auth/logout", { refreshToken }).catch(() => undefined);
+}

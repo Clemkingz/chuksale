@@ -1,26 +1,30 @@
 import { describe, expect, it } from "vitest";
 import { canRetry, countsTowardTotal } from "./contribution-status";
 import { compare, formatAmount, fromStroops, isValidAmount, progressPercent, sum, toStroops } from "./money";
-import { InvalidTransitionError, ReasonRequiredError, inBuilderGroup, isPubliclyVisible, transition } from "./project-status";
+import { actionRequiresReason, availableActions, inBuilderGroup, isPubliclyVisible } from "./project-status";
 
-describe("project state machine", () => {
-	it("lets a builder submit a draft", () => {
-		expect(transition("draft", "submitted", "builder")).toBe("submitted");
+describe("project actions (admin)", () => {
+	it("offers review decisions only while a project waits for review", () => {
+		expect(availableActions({ status: "submitted", published: false, featured: false })).toEqual(
+			expect.arrayContaining(["start_review", "approve", "reject", "request_changes", "archive"]),
+		);
+		expect(availableActions({ status: "draft", published: false, featured: false })).toEqual([]);
 	});
-	it("rejects a builder approving their own project", () => {
-		expect(() => transition("submitted", "approved", "builder")).toThrow(InvalidTransitionError);
+	it("only features published projects, and offers unfeature when featured", () => {
+		expect(availableActions({ status: "approved", published: false, featured: false })).not.toContain("feature");
+		expect(availableActions({ status: "approved", published: true, featured: true })).toContain("unfeature");
+		expect(availableActions({ status: "approved", published: true, featured: true })).not.toContain("feature");
 	});
-	it("rejects skipping review", () => {
-		expect(() => transition("draft", "approved", "admin")).toThrow(InvalidTransitionError);
-	});
-	it("requires a reason to reject or request changes", () => {
-		expect(() => transition("under_review", "rejected", "admin", "  ")).toThrow(ReasonRequiredError);
-		expect(transition("under_review", "changes_requested", "admin", "Add team links")).toBe("changes_requested");
+	it("requires a reason to reject, request changes or archive", () => {
+		expect(actionRequiresReason("reject")).toBe(true);
+		expect(actionRequiresReason("request_changes")).toBe(true);
+		expect(actionRequiresReason("archive")).toBe(true);
+		expect(actionRequiresReason("approve")).toBe(false);
 	});
 	it("only approved + published is public", () => {
-		expect(isPubliclyVisible({ status: "approved", visibility: "published" })).toBe(true);
-		expect(isPubliclyVisible({ status: "approved", visibility: "unpublished" })).toBe(false);
-		expect(isPubliclyVisible({ status: "submitted", visibility: "published" })).toBe(false);
+		expect(isPubliclyVisible({ status: "approved", published: true })).toBe(true);
+		expect(isPubliclyVisible({ status: "approved", published: false })).toBe(false);
+		expect(isPubliclyVisible({ status: "submitted", published: true })).toBe(false);
 	});
 });
 

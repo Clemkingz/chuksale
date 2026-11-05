@@ -1,86 +1,70 @@
 "use client";
 
-import { useMutation } from "@tanstack/react-query";
-import { api, unwrap } from "@/lib/api/client";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { AuthTokens, Me, OtpIssued, RegisterResult, UpdateMeInput } from "@repo/domain/types";
+import { builderApi, unwrap } from "@/lib/api/client";
 import { USE_MOCK_API } from "@/lib/api/source";
 import { notify } from "@/lib/use-toast";
-import { useBuilderSession } from "@/features/builder-auth/session";
+import { signOut, startSession, useSignedIn } from "@/features/builder-auth/session";
 import type { SignInValues, SignUpValues } from "@/features/builder-auth/schema";
 
-/** Builder auth calls (docs/API.md § Auth). Mutations never retry (ReactQueryProvider). */
+/** Builder auth (backend guide, "Authentication"). Mutations never retry (ReactQueryProvider). */
 
-export type OtpPurpose = "verify_email" | "reset_password";
+export const meKey = ["me"] as const;
 
-interface SessionDto {
-	access_token: string;
-	expires_at: number;
-	user: { id: string; email: string; role: string; display_name: string };
-}
-
-interface OtpSent {
-	email?: string;
-	resend_in?: number;
-	/** Mock only: the code the API "emailed". */
-	debug_code?: string;
-}
-
-/** Mock mode stands in for the inbox. */
-function showDemoCode(data: OtpSent | undefined, email: string) {
-	if (USE_MOCK_API && data?.debug_code) notify.demoInbox(data.debug_code, email);
-}
-
-function startSession(dto: SessionDto) {
-	useBuilderSession.getState().signIn({
-		token: dto.access_token,
-		userId: dto.user.id,
-		email: dto.user.email,
-		displayName: dto.user.display_name,
-		expiresAt: dto.expires_at,
-	});
-	return dto;
+/** Mock mode stands in for the inbox (staging sends no email either: codes come from the backend owner). */
+function showDemoCode(email: string) {
+	if (USE_MOCK_API) notify.demoInbox(email);
 }
 
 export function useSignUp() {
 	return useMutation({
-		mutationFn: async (values: SignUpValues) =>
-			unwrap<OtpSent & { email: string }>(
-				await api.post("/auth/signup", { full_name: values.full_name, email: values.email, password: values.password }),
+		mutationFn: async (v: SignUpValues) =>
+			unwrap<RegisterResult>(
+				await builderApi.post("/auth/register", {
+					name: v.name.trim(),
+					email: v.email.trim(),
+					password: v.password,
+					...(v.organizationName?.trim() ? { organizationName: v.organizationName.trim() } : {}),
+				}),
 			),
-		onSuccess: (data) => showDemoCode(data, data.email),
+		onSuccess: (data) => showDemoCode(data.email),
 	});
 }
 
 export function useSignIn() {
 	return useMutation({
-		mutationFn: async (values: SignInValues) => startSession(unwrap<SessionDto>(await api.post("/auth/login", values))),
-	});
-}
-
-export function useGoogleSignIn() {
-	return useMutation({
-		mutationFn: async () => {
-			// TODO(live): Google Identity Services → id_token. The mock accepts any token as the demo builder.
-			if (!USE_MOCK_API) throw new Error("Google sign-in isn’t set up yet. Use your email and password.");
-			return startSession(unwrap<SessionDto>(await api.post("/auth/social", { id_token: "mock-google-id-token" })));
+		mutationFn: async (v: SignInValues) => {
+			const tokens = unwrap<AuthTokens>(await builderApi.post("/auth/login", { email: v.email.trim(), password: v.password }));
+			// An admin signing in here: end that session at once; admins use the admin console.
+			if (tokens.role === "admin") await builderApi.post("/auth/logout", { refreshToken: tokens.refreshToken }).catch(() => undefined);
+			return tokens;
 		},
 	});
 }
 
-export function useVerifyOtp(purpose: OtpPurpose) {
+export function useVerifyEmail() {
+	const qc = useQueryClient();
 	return useMutation({
-		mutationFn: async (input: { email: string; code: string; password?: string }) => {
-			if (purpose === "verify_email") return startSession(unwrap<SessionDto>(await api.post("/auth/verify-email", input)));
-			await api.post("/auth/reset-password", input);
-			return null;
+		mutationFn: async (input: { email: string; otp: string }) =>
+			startSession(unwrap<AuthTokens>(await builderApi.post("/auth/verify-email", input))),
+		onSuccess: () => qc.invalidateQueries({ queryKey: meKey }),
+	});
+}
+
+export function useResetPassword() {
+	return useMutation({
+		mutationFn: async (input: { email: string; otp: string; newPassword: string }) => {
+			await builderApi.post("/auth/reset-password", input);
 		},
 	});
 }
 
-export function useResendOtp(purpose: OtpPurpose) {
+export function useResendOtp() {
 	return useMutation({
-		mutationFn: async (email: string) => ({ email, ...unwrap<OtpSent>(await api.post("/auth/resend-otp", { email, purpose })) }),
+		mutationFn: async (email: string) => ({ email, ...unwrap<OtpIssued>(await builderApi.post("/auth/resend-otp", { email })) }),
 		onSuccess: (data) => {
-			showDemoCode(data, data.email);
+			showDemoCode(data.email);
 			notify.success("A new code is on its way", `Check ${data.email}.`);
 		},
 		onError: (error) => notify.fromError(error, "Couldn’t send a new code."),
@@ -89,9 +73,63 @@ export function useResendOtp(purpose: OtpPurpose) {
 
 export function useForgotPassword() {
 	return useMutation({
-		mutationFn: async (email: string) => ({ email, ...unwrap<OtpSent>(await api.post("/auth/forgot-password", { email })) }),
-		onSuccess: (data) => showDemoCode(data, data.email),
+		mutationFn: async (email: string) => ({ email, ...unwrap<OtpIssued>(await builderApi.post("/auth/forgot-password", { email })) }),
+		onSuccess: (data) => showDemoCode(data.email),
 	});
 }
 
-export { showDemoCode };
+/** The signed-in builder (`GET /auth/me`). */
+export function useMe() {
+	const signedIn = useSignedIn();
+	return useQuery({
+		queryKey: meKey,
+		queryFn: async () => unwrap<Me>(await builderApi.get("/auth/me")),
+		enabled: !!signedIn,
+		staleTime: 5 * 60_000,
+	});
+}
+
+export function useUpdateMe() {
+	const qc = useQueryClient();
+	return useMutation({
+		mutationFn: async (input: UpdateMeInput) => unwrap<Me>(await builderApi.patch("/auth/me", input)),
+		onSuccess: (me) => qc.setQueryData(meKey, me),
+	});
+}
+
+export function useChangePassword() {
+	return useMutation({
+		mutationFn: async (input: { currentPassword: string; newPassword: string }) => {
+			await builderApi.post("/auth/change-password", input);
+		},
+	});
+}
+
+export function useSignOut() {
+	const qc = useQueryClient();
+	return useMutation({
+		mutationFn: signOut,
+		onSettled: () => {
+			qc.removeQueries({ queryKey: meKey });
+			qc.removeQueries({ queryKey: ["builder"] });
+			qc.removeQueries({ queryKey: ["notifications"] });
+		},
+	});
+}
+
+export function useSignOutEverywhere() {
+	const qc = useQueryClient();
+	return useMutation({
+		mutationFn: async () => {
+			await builderApi.post("/auth/logout-all");
+			await signOut();
+		},
+		onSettled: () => {
+			qc.removeQueries({ queryKey: meKey });
+			qc.removeQueries({ queryKey: ["builder"] });
+			qc.removeQueries({ queryKey: ["notifications"] });
+		},
+	});
+}
+
+export { startSession, showDemoCode };

@@ -20,7 +20,7 @@ export function ProjectPage({ slug }: { slug: string }) {
 						title="This project isn’t available"
 						description="It may not be approved yet, or it was taken down. Explore other projects instead."
 						action={
-							<Button asChild>
+							<Button asChild className="w-auto px-6">
 								<Link href={routes.projects}>Explore projects</Link>
 							</Button>
 						}

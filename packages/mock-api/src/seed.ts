@@ -1,4 +1,4 @@
-import type { AuditLog, Project, ProjectReview, Suggestion } from "@repo/domain/types";
+import type { AuditLog, Project, ProjectReview, Suggestion } from "./model";
 import type { MockContribution, MockDb, MockNotification } from "./db";
 import { DAY, hex, iso, random, stellarAddress, uuid } from "./util";
 

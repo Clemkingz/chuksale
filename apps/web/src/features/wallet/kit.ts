@@ -301,7 +301,10 @@ async function pairOnPhone(kit: typeof Kit, walletId: WalletId, onAppMissed?: ()
  * Connects one wallet and remembers it; resolves with the contributor's public address. On a phone, `onAppMissed`
  * runs if the wallet's app didn't open (the connection keeps waiting, so "Open again" can still finish it).
  */
-export async function connectWallet(walletId: WalletId, { onAppMissed }: { onAppMissed?: () => void } = {}) {
+export async function connectWallet(
+	walletId: WalletId,
+	{ onAppMissed, networkPassphrase = NETWORK_PASSPHRASE }: { onAppMissed?: () => void; networkPassphrase?: string } = {},
+) {
 	const kit = await loadKit();
 	const moduleId = moduleFor(walletId);
 	kit.setWallet(moduleId);
@@ -315,11 +318,10 @@ export async function connectWallet(walletId: WalletId, { onAppMissed }: { onApp
 	}
 	// Varial's extension follows the person's own network setting; the others are pinned to Testnet by the kit.
 	if (moduleId === "freighter") {
-		const { networkPassphrase } = await kit.getNetwork();
-		if (networkPassphrase !== NETWORK_PASSPHRASE)
-			throw new Error("Switch Varial to Testnet (Settings → Network), then try again.");
+		const network = await kit.getNetwork();
+		if (network.networkPassphrase !== networkPassphrase)
+			throw new Error("Switch your wallet to Testnet (Varial: Settings → Network), then try again.");
 	}
-	useWallet.getState().setConnected(address, walletId);
 	return address;
 }
 
@@ -333,12 +335,12 @@ function selectedModuleId(kit: typeof Kit) {
 }
 
 /** Has the contributor's wallet sign a transaction (base64 XDR); resolves with the signed XDR. On a phone, its app opens. */
-export async function signWithWallet(walletId: WalletId, xdr: string, address: string) {
+export async function signWithWallet(walletId: WalletId, xdr: string, address: string, networkPassphrase = NETWORK_PASSPHRASE) {
 	const kit = await loadKit();
 	const moduleId = moduleFor(walletId);
 	if (selectedModuleId(kit) !== moduleId) kit.setWallet(moduleId);
 	if (moduleId === WALLETCONNECT_ID) await walletConnectReady(kit);
-	const request = kit.signTransaction(xdr, { address, networkPassphrase: NETWORK_PASSPHRASE });
+	const request = kit.signTransaction(xdr, { address, networkPassphrase });
 	// Give the request a moment to reach the relay, then bring the app up to approve it.
 	if (opensAppDirectly(moduleId)) setTimeout(() => openWalletApp(walletId), 400);
 	const { signedTxXdr } = await request;
@@ -346,7 +348,6 @@ export async function signWithWallet(walletId: WalletId, xdr: string, address: s
 }
 
 export async function disconnectWallet() {
-	useWallet.getState().clear();
 	if (!kitPromise) return;
 	const kit = await kitPromise;
 	await kit.disconnect().catch(() => undefined);

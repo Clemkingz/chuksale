@@ -1,6 +1,6 @@
-import type { Project } from "@repo/domain/types";
+import type { Project } from "../model";
 import { compare } from "@repo/domain/money";
-import { isPubliclyVisible } from "@repo/domain/project-status";
+import { isPubliclyVisible } from "../model-rules";
 import { read } from "../db";
 import { HttpError, ok, route } from "../router";
 import { paginate } from "../util";

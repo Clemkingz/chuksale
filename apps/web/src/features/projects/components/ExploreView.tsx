@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ChevronDown, Search, SearchX, SlidersHorizontal, X } from "lucide-react";
-import { PROJECT_STAGE_LABEL } from "@repo/domain/labels";
-import type { ProjectStage } from "@repo/domain/types";
+import { PROJECT_STAGE_LABEL, PROJECT_TYPE_LABEL } from "@repo/domain/labels";
+import type { ProjectStage, ProjectType } from "@repo/domain/types";
 import { Button } from "@repo/ui/button";
 import { cn } from "@repo/ui/lib/utils";
 import { errorMessage } from "@/lib/api/errors";
@@ -13,41 +13,53 @@ import { routes } from "@/lib/routes";
 import { EmptyState, ErrorState } from "@/components/States";
 import { Pager } from "@/components/Pager";
 import { useCategories, useProjects, type ExploreFilters } from "@/features/projects/hooks";
+import { useNetwork } from "@/lib/stellar/network";
 import { ProjectCard, ProjectCardSkeleton } from "@/features/projects/components/ProjectCard";
 
 /**
- * /projects (PRD §6.3, FR-DISC-*): search (debounced), category chips, stage + funding filters, sort, pages.
+ * /projects (backend guide, "Discovery"): search (debounced), category chips with counts, stage / type / asset /
+ * fundraising filters, sort (featured, newest, title), pages.
  * Everything lives in the URL so results are shareable and survive back/refresh. Only approved, published
  * projects are ever returned by the API.
  */
 
 const STAGES = Object.entries(PROJECT_STAGE_LABEL) as [ProjectStage, string][];
+const TYPES = Object.entries(PROJECT_TYPE_LABEL) as [ProjectType, string][];
+const SORTS = ["featured", "newest", "title"] as const;
+const PER_PAGE = 9;
 
 export function ExploreView() {
 	const router = useRouter();
 	const pathname = usePathname();
 	const params = useSearchParams();
+	const stage = params.get("stage") ?? "";
+	const type = params.get("type") ?? "";
+	const sort = params.get("sort") ?? "";
 	const f: ExploreFilters = {
 		q: params.get("q") ?? "",
 		category: params.get("category") ?? "",
-		stage: params.get("stage") ?? "",
-		funding: params.get("funding") ?? "",
-		sort: params.get("sort") ?? "newest",
+		stage: STAGES.some(([s]) => s === stage) ? (stage as ProjectStage) : "",
+		type: TYPES.some(([t]) => t === type) ? (type as ProjectType) : "",
+		fundraising: params.get("fundraising") ? "1" : "",
+		asset: params.get("asset") ?? "",
+		sort: (SORTS as readonly string[]).includes(sort) ? (sort as ExploreFilters["sort"]) : "featured",
 		page: Math.max(1, Number(params.get("page")) || 1),
 	};
 	const set = (next: Partial<Record<keyof ExploreFilters, string | number | null>>) => {
 		const sp = new URLSearchParams(params.toString());
 		for (const [k, v] of Object.entries(next)) {
-			if (v === null || v === "" || (k === "sort" && v === "newest") || (k === "page" && v === 1)) sp.delete(k);
+			if (v === null || v === "" || (k === "sort" && v === "featured") || (k === "page" && v === 1)) sp.delete(k);
 			else sp.set(k, String(v));
 		}
 		router.replace(sp.size ? `${pathname}?${sp}` : pathname, { scroll: false });
 	};
 
 	const categories = useCategories();
-	const list = useProjects(f);
+	const list = useProjects(f, PER_PAGE);
+	const network = useNetwork();
 	const d = list.data;
-	const filtered = !!(f.q || f.category || f.stage || f.funding);
+	const filtered = !!(f.q || f.category || f.stage || f.type || f.fundraising || f.asset);
+	const clear = { q: null, category: null, stage: null, type: null, fundraising: null, asset: null, page: 1 };
 	const [showFilters, setShowFilters] = useState(false);
 
 	return (
@@ -85,11 +97,11 @@ export function ExploreView() {
 						</Chip>
 						{categories.data?.map((c) => (
 							<Chip key={c.id} active={f.category === c.slug} onClick={() => set({ category: c.slug, page: 1 })}>
-								{c.name}
+								{c.name} <span className="ml-1 text-xs opacity-60 tabular-nums">{c.publishedProjectCount}</span>
 							</Chip>
 						))}
 					</div>
-					<div className="grid grid-cols-3 gap-2 md:flex">
+					<div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:flex md:flex-wrap md:justify-end">
 						<Select
 							label="Stage"
 							value={f.stage}
@@ -97,23 +109,34 @@ export function ExploreView() {
 							options={[["", "Any stage"], ...STAGES]}
 						/>
 						<Select
-							label="Funding"
-							value={f.funding}
-							onChange={(v) => set({ funding: v, page: 1 })}
+							label="Type"
+							value={f.type}
+							onChange={(v) => set({ type: v, page: 1 })}
+							options={[["", "Any type"], ...TYPES]}
+						/>
+						<Select
+							label="Fundraising"
+							value={f.fundraising}
+							onChange={(v) => set({ fundraising: v, page: 1 })}
 							options={[
-								["", "Any funding"],
-								["open", "Still raising"],
-								["funded", "Target reached"],
+								["", "All projects"],
+								["1", "Accepting contributions"],
 							]}
+						/>
+						<Select
+							label="Asset"
+							value={f.asset}
+							onChange={(v) => set({ asset: v, page: 1 })}
+							options={[["", "Any asset"], ...(network.data?.assets.map((a) => [a.id, `Accepts ${a.code}`] as [string, string]) ?? [])]}
 						/>
 						<Select
 							label="Sort"
 							value={f.sort}
 							onChange={(v) => set({ sort: v, page: 1 })}
 							options={[
-								["newest", "Newest"],
-								["most_funded", "Most funded"],
 								["featured", "Featured first"],
+								["newest", "Newest"],
+								["title", "A–Z"],
 							]}
 						/>
 					</div>
@@ -121,11 +144,13 @@ export function ExploreView() {
 			</div>
 
 			<div className="mt-8 flex items-center justify-between text-sm text-white/55" aria-live="polite">
-				<span>{d ? `${d.meta.total} project${d.meta.total === 1 ? "" : "s"}` : " "}</span>
+				<span>
+					{d ? `${d.paginationMeta.totalCount} project${d.paginationMeta.totalCount === 1 ? "" : "s"}` : " "}
+				</span>
 				{filtered && (
 					<button
 						type="button"
-						onClick={() => set({ q: null, category: null, stage: null, funding: null, page: 1 })}
+						onClick={() => set(clear)}
 						className="inline-flex items-center gap-1 text-primary-300 hover:text-primary-200"
 					>
 						<X className="size-3.5" /> Clear filters
@@ -143,7 +168,7 @@ export function ExploreView() {
 				<div className="mt-4">
 					<ErrorState message={errorMessage(list.error)} onRetry={() => void list.refetch()} retrying={list.isFetching} />
 				</div>
-			) : d && d.items.length === 0 ? (
+			) : d && d.result.length === 0 ? (
 				<EmptyState
 					className="mt-4"
 					icon={filtered ? <SearchX className="size-6" aria-hidden /> : undefined}
@@ -151,11 +176,11 @@ export function ExploreView() {
 					description={filtered ? "Try another word or fewer filters." : "Approved projects show up here. Have one in mind?"}
 					action={
 						filtered ? (
-							<Button variant="outline" onClick={() => set({ q: null, category: null, stage: null, funding: null, page: 1 })}>
+							<Button variant="outline" className="w-auto px-5" onClick={() => set(clear)}>
 								Clear filters
 							</Button>
 						) : (
-							<Button asChild>
+							<Button asChild className="w-auto px-6">
 								<Link href={routes.newProject}>Submit a project</Link>
 							</Button>
 						)
@@ -169,11 +194,15 @@ export function ExploreView() {
 							list.isPlaceholderData && "opacity-60",
 						)}
 					>
-						{d.items.map((p, i) => (
+						{d.result.map((p, i) => (
 							<ProjectCard key={p.id} project={p} index={i} />
 						))}
 					</ul>
-					<Pager page={d.meta.page} pages={d.meta.total_pages} onPage={(page) => set({ page })} />
+					<Pager
+						page={f.page}
+						pages={Math.max(1, Math.ceil(d.paginationMeta.totalCount / PER_PAGE))}
+						onPage={(page) => set({ page })}
+					/>
 				</>
 			) : null}
 		</div>

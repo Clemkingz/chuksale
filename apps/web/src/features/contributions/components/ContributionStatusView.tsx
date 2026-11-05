@@ -2,39 +2,58 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, CheckCircle2, Clock, ExternalLink, Loader2, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, ExternalLink, Loader2, Wallet, XCircle } from "lucide-react";
 import { CONTRIBUTION_STATUS_LABEL } from "@repo/domain/labels";
 import { formatAmount } from "@repo/domain/money";
-import type { ContributionDetail } from "@repo/domain/types";
+import type { Contribution } from "@repo/domain/types";
 import { Button } from "@repo/ui/button";
 import { cn } from "@repo/ui/lib/utils";
 import { errorMessage, errorStatus } from "@/lib/api/errors";
 import { routes } from "@/lib/routes";
-import { explorer } from "@/lib/stellar/config";
 import { AddressChip } from "@/components/AddressChip";
 import { ProjectLogo } from "@/components/ProjectLogo";
 import { EmptyState, ErrorState } from "@/components/States";
 import { useContribution } from "@/features/contributions/hooks";
+import { useConnectedWallet } from "@/features/wallet/hooks";
+import { useWalletDialog } from "@/features/wallet/dialog-store";
 import { STATUS_TONE } from "@/features/contributions/components/StatusPill";
 
 /**
- * /contributions/[id] (PRD §6.5 step 9): Pending (polls every 4 s, announced politely) → Confirmed (receipt with
- * hash and explorer link) / Failed (reason, safe retry = a new contribution) / Expired / Cancelled.
- * Pending is never shown as funded (PRD §13).
+ * /contributions/[id] (backend guide, "Contributions" step 5): Pending (polls every 4 s, announced politely) →
+ * Confirmed (receipt with hash and explorer link) / Failed or Expired (reason; a new contribution is safe).
+ * Pending is never shown as funded. Reading it needs the contributor's wallet session.
  */
 export function ContributionStatusView({ id }: { id: string }) {
 	const q = useContribution(id);
 	const c = q.data;
+	const { ready, address } = useConnectedWallet();
+	const showWallet = useWalletDialog((s) => s.show);
+
+	if (ready && !address)
+		return (
+			<div className="app-container max-w-[760px] py-16">
+				<EmptyState
+					icon={<Wallet className="size-6" aria-hidden />}
+					title="Connect your wallet to see this contribution"
+					description="Contributions are tied to the wallet that sent them. Connect the same wallet to see its status."
+					action={
+						<Button className="w-auto px-6" onClick={() => showWallet("Connect the wallet this contribution came from.")}>
+							Connect wallet
+						</Button>
+					}
+				/>
+			</div>
+		);
 
 	if (q.isError)
 		return (
 			<div className="app-container max-w-[760px] py-16">
-				{errorStatus(q.error) === 404 ? (
+				{errorStatus(q.error) === 404 || errorStatus(q.error) === 403 ? (
 					<EmptyState
 						title="We couldn’t find this contribution"
-						description="Check the link, or look in your wallet’s history."
+						description="Check the link, and that the wallet that sent it is connected."
 						action={
-							<Button asChild>
+							<Button asChild className="w-auto px-6">
 								<Link href={routes.wallet}>My wallet</Link>
 							</Button>
 						}
@@ -57,15 +76,19 @@ export function ContributionStatusView({ id }: { id: string }) {
 			<StatusHeader c={c} />
 			<section aria-label="Receipt" className="animate-rise mt-6 rounded-[24px] bg-[#16161B] px-5 py-6 [--i:1] sm:px-8 md:py-8">
 				<div className="flex items-center gap-4">
-					<ProjectLogo title={c.project.title} src={c.project.logo_url} className="size-12 text-sm" />
+					<ProjectLogo title={c.project.title} src={null} className="size-12 text-sm" />
 					<div className="min-w-0">
 						<p className="text-sm text-white/55">Contribution to</p>
-						<Link
-							href={routes.project(c.project.slug)}
-							className="block truncate font-display text-xl font-bold hover:text-primary-300"
-						>
-							{c.project.title}
-						</Link>
+						{c.project.slug ? (
+							<Link
+								href={routes.project(c.project.slug)}
+								className="block truncate font-display text-xl font-bold hover:text-primary-300"
+							>
+								{c.project.title}
+							</Link>
+						) : (
+							<p className="truncate font-display text-xl font-bold">{c.project.title}</p>
+						)}
 					</div>
 					<p
 						className={cn(
@@ -81,46 +104,43 @@ export function ContributionStatusView({ id }: { id: string }) {
 						<span className={cn("font-medium", STATUS_TONE[c.status])}>{CONTRIBUTION_STATUS_LABEL[c.status]}</span>
 					</Row>
 					<Row label="Asset">
-						{c.asset.label}
+						{c.asset.code}
 						{c.asset.issuer && <AddressChip value={c.asset.issuer} head={5} tail={5} className="block text-xs text-white/60" />}
 					</Row>
 					<Row label="From">
-						<AddressChip value={c.sender_address} head={8} tail={6} className="text-sm" />
+						<AddressChip value={c.contributorAddress} head={8} tail={6} className="text-sm" />
 					</Row>
-					<Row label="To (project wallet)">
-						<AddressChip value={c.destination_or_contract} head={8} tail={6} className="text-sm" />
+					<Row label="To (the builder’s wallet)">
+						<AddressChip value={c.destination} head={8} tail={6} className="text-sm" />
 					</Row>
-					<Row label="Memo (reference)">
-						<span className="font-mono">{c.reference}</span>
+					<Row label="Memo">
+						<span className="font-mono">{c.memo}</span>
 					</Row>
+					<Row label="Network fee">{formatAmount(c.fee, 7)} XLM</Row>
 					<Row label="Transaction">
-						{c.simulated ? (
-							<span className="text-white/55">Simulated (Demo wallet)</span>
-						) : (
-							<AddressChip value={c.tx_hash} kind="tx" head={8} tail={8} className="text-sm" />
-						)}
+						<AddressChip value={c.txHash} kind="tx" head={8} tail={8} explorerLink={false} className="text-sm" />
 					</Row>
-					{c.ledger_or_event_ref && <Row label="Ledger">{c.ledger_or_event_ref}</Row>}
-					<Row label="Sent">{new Date(c.created_at).toLocaleString()}</Row>
-					{c.confirmed_at && <Row label="Confirmed">{new Date(c.confirmed_at).toLocaleString()}</Row>}
-					<Row label="Network">Stellar Testnet</Row>
+					{c.ledger && <Row label="Ledger">{c.ledger}</Row>}
+					<Row label="Started">{new Date(c.createdAt).toLocaleString()}</Row>
+					{c.confirmedAt && <Row label="Confirmed">{new Date(c.confirmedAt).toLocaleString()}</Row>}
 				</dl>
 				<div className="mt-7 flex flex-col gap-3 sm:flex-row">
-					{c.status === "failed" || c.status === "expired" || c.status === "cancelled" ? (
-						<Button asChild className="h-12 flex-1">
-							<Link href={routes.contribute(c.project.slug)}>Start a new contribution</Link>
-						</Button>
-					) : (
-						<Button asChild className="h-12 flex-1">
-							<Link href={routes.project(c.project.slug)}>Back to project</Link>
-						</Button>
-					)}
+					{c.project.slug &&
+						(c.status === "failed" || c.status === "expired" || c.status === "awaiting_signature" ? (
+							<Button asChild className="h-12 flex-1">
+								<Link href={routes.contribute(c.project.slug)}>Start a new contribution</Link>
+							</Button>
+						) : (
+							<Button asChild className="h-12 flex-1">
+								<Link href={routes.project(c.project.slug)}>Back to project</Link>
+							</Button>
+						))}
 					<Button asChild variant="outline" className="h-12 flex-1">
 						<Link href={routes.wallet}>My wallet &amp; contributions</Link>
 					</Button>
-					{!c.simulated && (
-						<Button asChild variant="ghost" className="h-12 gap-2">
-							<a href={explorer.tx(c.tx_hash)} target="_blank" rel="noopener noreferrer">
+					{(c.status === "confirmed" || c.status === "pending") && (
+						<Button asChild variant="ghost" className="h-12 w-auto gap-2 px-5">
+							<a href={c.explorerUrl} target="_blank" rel="noopener noreferrer">
 								Stellar Expert <ExternalLink className="size-4" />
 							</a>
 						</Button>
@@ -131,7 +151,7 @@ export function ContributionStatusView({ id }: { id: string }) {
 	);
 }
 
-function StatusHeader({ c }: { c: ContributionDetail }) {
+function StatusHeader({ c }: { c: Contribution }) {
 	if (c.status === "confirmed")
 		return (
 			<div className="flex flex-col items-center text-center" aria-live="polite">
@@ -152,20 +172,32 @@ function StatusHeader({ c }: { c: ContributionDetail }) {
 				</span>
 				<h1 className="mt-5 font-display text-[28px] font-bold md:text-[34px]">Contribution failed</h1>
 				<p className="mt-2 max-w-[480px] text-white/70">
-					{c.failure_reason ?? "It couldn’t be verified on Stellar."} It isn’t counted.
+					{c.failureReason ?? "It couldn’t be completed on Stellar."} It isn’t counted.
 				</p>
 			</div>
 		);
-	if (c.status === "expired" || c.status === "cancelled")
+	if (c.status === "expired")
 		return (
 			<div className="flex flex-col items-center text-center" aria-live="polite">
 				<span className="flex size-20 items-center justify-center rounded-full bg-white/10 text-white/70">
 					<AlertTriangle className="size-10" aria-hidden />
 				</span>
-				<h1 className="mt-5 font-display text-[28px] font-bold">
-					{c.status === "expired" ? "This contribution expired" : "This contribution was cancelled"}
-				</h1>
-				<p className="mt-2 text-white/70">Nothing was counted. You can start a new one.</p>
+				<h1 className="mt-5 font-display text-[28px] font-bold">This contribution expired</h1>
+				<p className="mt-2 max-w-[480px] text-white/70">
+					{c.failureReason ?? "It wasn’t signed in time."} No funds moved. You can start a new one.
+				</p>
+			</div>
+		);
+	if (c.status === "awaiting_signature")
+		return (
+			<div className="flex flex-col items-center text-center" aria-live="polite">
+				<span className="flex size-20 items-center justify-center rounded-full bg-white/10 text-white/70">
+					<Wallet className="size-10" aria-hidden />
+				</span>
+				<h1 className="mt-5 font-display text-[28px] font-bold">Still waiting for the wallet</h1>
+				<p className="mt-2 max-w-[480px] text-white/70">
+					This payment hasn’t been signed and nothing has been sent. It expires on its own; you can start a new one.
+				</p>
 			</div>
 		);
 	return (
@@ -178,7 +210,7 @@ function StatusHeader({ c }: { c: ContributionDetail }) {
 				We’re checking your payment on Stellar. This usually takes a few seconds. It isn’t counted until it’s confirmed.
 			</p>
 			<p className="mt-3 inline-flex items-center gap-2 text-sm text-white/55">
-				<Loader2 className="size-4 animate-spin" aria-hidden /> <SlowHint since={c.created_at} />
+				<Loader2 className="size-4 animate-spin" aria-hidden /> <SlowHint since={c.submittedAt ?? c.createdAt} />
 			</p>
 		</div>
 	);

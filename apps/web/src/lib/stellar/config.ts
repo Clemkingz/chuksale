@@ -1,40 +1,24 @@
-import type { AcceptedAsset } from "@repo/domain/types";
-
 /**
- * Stellar network constants. Testnet only until the mainnet release gate (PRD §8, §18 rule 15).
+ * Stellar constants and display helpers. The network, its assets and the explorer come from the API at runtime
+ * (`GET /stellar/network`, see `network.ts`); these are only the Testnet defaults used before it has loaded.
  */
 export const STELLAR_NETWORK = "testnet" as const;
 
-/** Testnet's network passphrase: what a wallet signs for. */
+/** Testnet's network passphrase (default until /stellar/network answers). */
 export const NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
-
-/** Horizon on Testnet: where contributions are built, submitted, and (in mock mode) verified. */
-export const HORIZON_URL = process.env.NEXT_PUBLIC_HORIZON_URL || "https://horizon-testnet.stellar.org";
-
-/**
- * The asset allowlist (PRD §8.4, decision D2 in docs/DECISIONS.md). Issuer is always shown next to the code
- * to prevent lookalike-asset confusion.
- */
-export const ASSETS = {
-	XLM: { id: "xlm", code: "XLM", issuer: null, label: "XLM (Testnet)" },
-	USDC: {
-		id: "usdc",
-		code: "USDC",
-		issuer: process.env.NEXT_PUBLIC_USDC_ISSUER || "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
-		label: "USDC (Testnet)",
-	},
-} as const satisfies Record<string, AcceptedAsset>;
-
-export const ACCEPTED_ASSETS: AcceptedAsset[] = Object.values(ASSETS);
 
 const EXPLORER = "https://stellar.expert/explorer/testnet";
 
+/** Explorer links; pass the network's `explorerUrl` when you have it. */
 export const explorer = {
-	tx: (hash: string) => `${EXPLORER}/tx/${hash}`,
-	account: (address: string) => `${EXPLORER}/account/${address}`,
+	tx: (hash: string, base = EXPLORER) => `${base}/tx/${hash}`,
+	account: (address: string, base = EXPLORER) => `${base}/account/${address}`,
 };
 
 /** "GBC4BO…ZFGIE" for tight spaces; full values stay copyable (PRD §13). */
 export function shortKey(value: string, head = 6, tail = 5) {
 	return value.length > head + tail + 1 ? `${value.slice(0, head)}…${value.slice(-tail)}` : value;
 }
+
+/** A Stellar public key (G…, 56 chars). Secret keys (S…) and muxed (M…) addresses are refused. */
+export const isPublicKey = (v: string) => /^G[A-Z2-7]{55}$/.test(v.trim());

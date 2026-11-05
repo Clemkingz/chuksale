@@ -11,7 +11,8 @@ import { routes } from "@/lib/routes";
 import { withBasePath } from "@/lib/site";
 import { shortKey } from "@/lib/stellar/config";
 import { notify } from "@/lib/use-toast";
-import { DEMO_WALLET, DemoWalletError, connectAnyWallet, type AnyWalletId } from "@/features/wallet/connect";
+import { errorMessage } from "@/lib/api/errors";
+import { DEMO_WALLET, DemoWalletError, connectAnyWallet, type AnyWalletId, type ConnectStage } from "@/features/wallet/connect";
 import { useIsPhone } from "@/features/wallet/device";
 import { useWalletDialog } from "@/features/wallet/dialog-store";
 import { WALLETS, cancelWalletPairing, installLink, openWalletApp, walletKind, type WalletId } from "@/features/wallet/kit";
@@ -69,6 +70,7 @@ function ConnectWalletBody({
 	const router = useRouter();
 	const phone = useIsPhone();
 	const [busy, setBusy] = useState<AnyWalletId | null>(null);
+	const [stage, setStage] = useState<ConnectStage>("connect");
 	const [done, setDone] = useState<AnyWalletId | null>(null);
 	const [problem, setProblem] = useState<Problem | null>(null);
 	const [showMore, setShowMore] = useState(false);
@@ -84,10 +86,12 @@ function ConnectWalletBody({
 	async function connect(id: AnyWalletId) {
 		setProblem(null);
 		setBusy(id);
+		setStage("connect");
 		setLastTried(id);
 		try {
 			const address = await connectAnyWallet(id, {
 				onAppMissed: () => id !== "demo" && setProblem({ kind: "app_missed", walletId: id }),
+				onStage: setStage,
 			});
 			setDone(id);
 			notify.success("Wallet connected", `${shortKey(address)} · Stellar Testnet`);
@@ -160,7 +164,7 @@ function ConnectWalletBody({
 								<span className="min-w-0 flex-1">
 									<span className="block text-[17px] text-white">{row.name}</span>
 									<span className="block truncate text-xs text-white/55">
-										{isBusy ? "Approve the request in your wallet…" : row.kind}
+										{isBusy ? STAGE_COPY[stage] : row.kind}
 									</span>
 								</span>
 								{isBusy && <BtnLoader className="size-5 text-primary-400" label={`Connecting ${row.name}`} />}
@@ -233,7 +237,15 @@ function ConnectWalletBody({
 	);
 }
 
+const STAGE_COPY: Record<ConnectStage, string> = {
+	connect: "Approve the connection in your wallet…",
+	sign: "Sign the one-time sign-in message (no funds move)…",
+	verify: "Checking the signature…",
+};
+
 function toProblem(error: unknown, id: AnyWalletId): Problem {
+	// API errors (challenge expired, wrong network, wallet refused…) carry their own sentence.
+	if (error && typeof error === "object" && "isAxiosError" in error) return { kind: "error", message: errorMessage(error) };
 	const message = error instanceof Error ? error.message : ((error as { message?: string })?.message ?? "");
 	if (error instanceof DemoWalletError) {
 		if (error.kind === "not_installed") return { kind: "not_installed", message, walletId: "demo" };

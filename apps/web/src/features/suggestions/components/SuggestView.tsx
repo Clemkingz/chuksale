@@ -9,7 +9,7 @@ import { SUGGESTION_STATUS_LABEL, SUGGESTION_TYPE_LABEL } from "@repo/domain/lab
 import type { SuggestionStatus, SuggestionType } from "@repo/domain/types";
 import { Button } from "@repo/ui/button";
 import { cn } from "@repo/ui/lib/utils";
-import { errorData, errorMessage, errorStatus } from "@/lib/api/errors";
+import { detailsByField, errorMessage, errorStatus } from "@/lib/api/errors";
 import { routes } from "@/lib/routes";
 import { shortKey } from "@/lib/stellar/config";
 import { timeAgo } from "@/lib/time";
@@ -41,14 +41,16 @@ const schema = z.object({
 });
 type Values = z.infer<typeof schema>;
 
+const FIELDS = ["type", "title", "body", "link"] as const;
+
 const STATUS_ICON: Record<SuggestionStatus, typeof Clock> = {
-	pending_moderation: Clock,
+	pending: Clock,
 	published: CheckCircle2,
 	hidden: XCircle,
 	rejected: XCircle,
 };
 const STATUS_TONE: Record<SuggestionStatus, string> = {
-	pending_moderation: "text-warning-200",
+	pending: "text-warning-200",
 	published: "text-success-200",
 	hidden: "text-white/50",
 	rejected: "text-error-200",
@@ -59,7 +61,7 @@ export function SuggestView({ slug }: { slug: string }) {
 	const create = useCreateSuggestion(slug);
 	const requireWallet = useRequireWallet();
 	const { address } = useConnectedWallet();
-	const mine = useMySuggestions(address);
+	const mine = useMySuggestions();
 	const form = useForm<Values>({
 		resolver: zodResolver(schema),
 		defaultValues: { type: "product_improvement", title: "", body: "", link: "" },
@@ -71,18 +73,18 @@ export function SuggestView({ slug }: { slug: string }) {
 
 	const onSubmit = form.handleSubmit((v) =>
 		requireWallet(
-			(wallet) =>
+			() =>
 				create.mutate(
-					{ ...v, wallet_address: wallet, link: v.link || undefined },
+					{ type: v.type, title: v.title, body: v.body, ...(v.link ? { link: v.link } : {}) },
 					{
 						onSuccess: () => {
-							notify.success("Suggestion sent", "It’ll be public once a moderator approves it.");
+							notify.success("Thanks, it will appear once a moderator approves it");
 							form.reset();
 						},
 						onError: (e) => {
-							const field = String(errorData(e)?.field ?? "") as keyof Values;
-							if (errorStatus(e) === 422 && ["type", "title", "body", "link"].includes(field))
-								form.setError(field, { message: errorMessage(e) });
+							if (errorStatus(e) !== 400) return;
+							const byField = detailsByField(e);
+							for (const f of FIELDS) if (byField[f]) form.setError(f, { message: byField[f] });
 						},
 					},
 				),
@@ -90,7 +92,8 @@ export function SuggestView({ slug }: { slug: string }) {
 		),
 	);
 
-	const projectMine = mine.data?.filter((s) => s.project.slug === slug) ?? [];
+	const projectMine = mine.data?.result.filter((s) => s.project.slug === slug) ?? [];
+	const fieldErrors = create.isError ? detailsByField(create.error) : {};
 
 	if (project.isError)
 		return (
@@ -98,7 +101,7 @@ export function SuggestView({ slug }: { slug: string }) {
 				<EmptyState
 					title="This project isn’t available"
 					action={
-						<Button asChild>
+						<Button asChild className="w-auto px-6">
 							<Link href={routes.projects}>Explore projects</Link>
 						</Button>
 					}
@@ -115,7 +118,7 @@ export function SuggestView({ slug }: { slug: string }) {
 				<section aria-labelledby="suggest-title" className="animate-rise rounded-[24px] bg-[#16161B] px-5 py-7 sm:px-8 md:py-9">
 					<div className="flex items-center gap-4">
 						{p ? (
-							<ProjectLogo title={p.title} src={p.logo_url} className="size-12 text-sm" />
+							<ProjectLogo title={p.title} src={p.coverImageUrl} className="size-12 text-sm" />
 						) : (
 							<span className="skeleton-shimmer block size-12 rounded-full" />
 						)}
@@ -172,9 +175,7 @@ export function SuggestView({ slug }: { slug: string }) {
 						/>
 						<FormError
 							message={
-								create.isError && !["type", "title", "body", "link"].includes(String(errorData(create.error)?.field ?? ""))
-									? errorMessage(create.error)
-									: null
+								create.isError && !FIELDS.some((f) => fieldErrors[f]) ? errorMessage(create.error) : null
 							}
 						/>
 						<div className="flex flex-col gap-3 rounded-xl bg-white/[0.04] px-4 py-3 text-sm text-white/70 sm:flex-row sm:items-center sm:justify-between">
@@ -224,8 +225,10 @@ export function SuggestView({ slug }: { slug: string }) {
 											<Icon className="size-3.5" aria-hidden /> {SUGGESTION_STATUS_LABEL[s.status]}
 										</p>
 										<p className="mt-1 font-medium break-words">{s.title}</p>
-										{s.moderation_reason && <p className="mt-1 text-xs text-white/55">Moderator: {s.moderation_reason}</p>}
-										<p className="mt-1 text-xs text-white/45">{timeAgo(s.created_at)}</p>
+										{s.moderationNote && (
+											<p className="mt-1 text-xs whitespace-pre-line text-white/55">Moderator: {s.moderationNote}</p>
+										)}
+										<p className="mt-1 text-xs text-white/45">{timeAgo(s.createdAt)}</p>
 									</li>
 								);
 							})}

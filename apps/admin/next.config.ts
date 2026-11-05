@@ -19,7 +19,7 @@ const nextConfig: NextConfig = {
 	distDir: process.env.NEXT_DIST_DIR || ".next",
 	images: { unoptimized: true },
 	reactCompiler: true,
-	transpilePackages: ["@repo/ui", "@repo/mock-api", "@repo/domain"],
+	transpilePackages: ["@repo/ui", "@repo/mock-api", "@repo/domain", "@repo/api"],
 	allowedDevOrigins: ["192.168.*.*", "10.*.*.*", "172.*.*.*"],
 	async rewrites() {
 		return [{ source: "/api/v1/:path*", destination: `${API_ORIGIN}/:path*` }];

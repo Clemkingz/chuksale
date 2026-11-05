@@ -6,7 +6,7 @@ import { errorMessage } from "@/lib/api/errors";
 import { routes } from "@/lib/routes";
 import { notify } from "@/lib/use-toast";
 import { OtpPanel } from "@/features/builder-auth/components/OtpPanel";
-import { useResendOtp, useVerifyOtp } from "@/features/builder-auth/hooks";
+import { useResendOtp, useVerifyEmail } from "@/features/builder-auth/hooks";
 
 /** Designs A2/A3: the code from the sign-up email; success signs the builder in. */
 export function VerifyEmailView() {
@@ -14,8 +14,8 @@ export function VerifyEmailView() {
 	const params = useSearchParams();
 	const email = params.get("email") ?? "";
 	const next = params.get("next");
-	const verify = useVerifyOtp("verify_email");
-	const resend = useResendOtp("verify_email");
+	const verify = useVerifyEmail();
+	const resend = useResendOtp();
 
 	if (!email) return <MissingEmail />;
 
@@ -29,7 +29,7 @@ export function VerifyEmailView() {
 			onResend={() => resend.mutateAsync(email).catch(() => undefined)}
 			onSubmit={(code) =>
 				verify.mutate(
-					{ email, code },
+					{ email, otp: code },
 					{
 						onSuccess: () => {
 							notify.success("Email verified", "Welcome to Chucksales. Your builder account is ready.");

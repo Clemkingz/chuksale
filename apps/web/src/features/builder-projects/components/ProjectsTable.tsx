@@ -3,9 +3,9 @@
 import type { CSSProperties } from "react";
 import Link from "next/link";
 import { Copy, Eye, ExternalLink, MoreHorizontal, Pencil } from "lucide-react";
-import { formatAmount, progressPercent } from "@repo/domain/money";
-import { isBuilderEditable, isPubliclyVisible } from "@repo/domain/project-status";
-import type { BuilderProjectListItem } from "@repo/domain/types";
+import { formatAmount } from "@repo/domain/money";
+import { isPubliclyVisible } from "@repo/domain/project-status";
+import type { Project } from "@repo/domain/types";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -19,7 +19,7 @@ import { shortKey } from "@/lib/stellar/config";
 import { notify } from "@/lib/use-toast";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ProjectLogo } from "@/components/ProjectLogo";
-import { TimeLeft } from "@/features/builder-projects/components/TimeLeft";
+import { timeAgo } from "@/lib/time";
 
 /**
  * Design "Dev add project 3": bordered card, "Projects (n)", columns Name · Amount raised · Time left · Wallet
@@ -29,7 +29,7 @@ import { TimeLeft } from "@/features/builder-projects/components/TimeLeft";
 
 const stagger = (i: number) => ({ "--d": i }) as CSSProperties;
 
-export function ProjectsTable({ items, total, dimmed }: { items: BuilderProjectListItem[]; total: number; dimmed?: boolean }) {
+export function ProjectsTable({ items, total, dimmed }: { items: Project[]; total: number; dimmed?: boolean }) {
 	return (
 		<div
 			aria-busy={dimmed}
@@ -48,13 +48,13 @@ export function ProjectsTable({ items, total, dimmed }: { items: BuilderProjectL
 							Name
 						</th>
 						<th scope="col" className="w-[24%] px-4 py-5 font-normal">
-							Amount raised
+							Fundraising
 						</th>
 						<th scope="col" className="w-[16%] px-4 py-5 font-normal">
-							Time left
+							Updated
 						</th>
 						<th scope="col" className="w-[22%] px-4 py-5 font-normal">
-							Wallet address
+							Payout wallet
 						</th>
 						<th scope="col" className="w-[10%] px-4 py-5 text-center font-normal">
 							Action
@@ -71,7 +71,7 @@ export function ProjectsTable({ items, total, dimmed }: { items: BuilderProjectL
 						>
 							<td className="px-7 py-[13px]">
 								<div className="flex min-w-0 items-center gap-4">
-									<ProjectLogo title={p.title} src={p.logo_url} />
+									<ProjectLogo title={p.title} src={p.coverImageUrl} />
 									<div className="min-w-0">
 										<Link
 											href={routes.builderProject(p.id)}
@@ -86,11 +86,11 @@ export function ProjectsTable({ items, total, dimmed }: { items: BuilderProjectL
 							<td className="px-4">
 								<Raised project={p} />
 							</td>
-							<td className="px-4 text-base">
-								<TimeLeft endsAt={p.ends_at} />
+							<td className="px-4 text-base text-white/80" title={new Date(p.updatedAt).toLocaleString()}>
+								{timeAgo(p.updatedAt)}
 							</td>
 							<td className="px-4">
-								<WalletCell address={p.destination_address} />
+								<WalletCell address={p.payoutAddress} />
 							</td>
 							<td className="px-4 text-center">
 								<RowActions project={p} />
@@ -105,7 +105,7 @@ export function ProjectsTable({ items, total, dimmed }: { items: BuilderProjectL
 				{items.map((p, i) => (
 					<li key={p.id} data-reveal="up" style={stagger(i)} className="flex flex-col gap-4 px-5 py-5">
 						<div className="flex items-start gap-3">
-							<ProjectLogo title={p.title} src={p.logo_url} className="size-11" />
+							<ProjectLogo title={p.title} src={p.coverImageUrl} className="size-11" />
 							<div className="min-w-0 flex-1">
 								<Link href={routes.builderProject(p.id)} className="block truncate text-base font-medium text-white">
 									{p.title}
@@ -116,21 +116,19 @@ export function ProjectsTable({ items, total, dimmed }: { items: BuilderProjectL
 						</div>
 						<dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
 							<div className="col-span-2 sm:col-span-1">
-								<dt className="text-white/50">Amount raised</dt>
+								<dt className="text-white/50">Fundraising</dt>
 								<dd className="mt-0.5">
 									<Raised project={p} />
 								</dd>
 							</div>
 							<div>
-								<dt className="text-white/50">Time left</dt>
-								<dd className="mt-0.5">
-									<TimeLeft endsAt={p.ends_at} />
-								</dd>
+								<dt className="text-white/50">Updated</dt>
+								<dd className="mt-0.5">{timeAgo(p.updatedAt)}</dd>
 							</div>
 							<div className="min-w-0">
-								<dt className="text-white/50">Wallet address</dt>
+								<dt className="text-white/50">Payout wallet</dt>
 								<dd className="mt-0.5">
-									<WalletCell address={p.destination_address} short />
+									<WalletCell address={p.payoutAddress} short />
 								</dd>
 							</div>
 						</dl>
@@ -141,37 +139,17 @@ export function ProjectsTable({ items, total, dimmed }: { items: BuilderProjectL
 	);
 }
 
-function Raised({ project: p }: { project: BuilderProjectListItem }) {
-	const code = p.target_asset?.code ?? "XLM";
-	const live = isPubliclyVisible(p);
-	if (!live && Number(p.raised_amount) === 0) return <span className="text-white/45">Not live yet</span>;
-	const pct = progressPercent(p.raised_amount, p.target_amount);
+/** What the project raises in (the list has no totals: those are on each project's page). */
+function Raised({ project: p }: { project: Project }) {
+	if (!p.fundraisingEnabled) return <span className="text-white/45">Not raising funds</span>;
 	return (
 		<div className="min-w-0">
 			<p className="truncate text-base">
-				{formatAmount(p.raised_amount)} {code}
-				{p.target_amount && (
-					<span className="text-white/60">
-						{" "}
-						/ {formatAmount(p.target_amount)} {code}
-					</span>
-				)}
+				{p.targetAmount ? `Target ${formatAmount(p.targetAmount)} ${p.targetAsset?.code ?? ""}` : "No target"}
 			</p>
-			{pct !== null && (
-				<div
-					className="mt-1.5 h-1 w-full max-w-[180px] overflow-hidden rounded-full bg-white/10"
-					role="progressbar"
-					aria-valuenow={Math.min(pct, 100)}
-					aria-valuemin={0}
-					aria-valuemax={100}
-					aria-label={`${pct}% of target`}
-				>
-					<div
-						className={cn("h-full rounded-full", pct >= 100 ? "bg-success-300" : "bg-primary-500")}
-						style={{ width: `${Math.min(pct, 100)}%` }}
-					/>
-				</div>
-			)}
+			<p className="mt-0.5 truncate text-xs text-white/55">
+				{p.acceptedAssets.length ? `Accepts ${p.acceptedAssets.map((a) => a.code).join(" / ")}` : "No assets chosen yet"}
+			</p>
 		</div>
 	);
 }
@@ -201,7 +179,7 @@ function WalletCell({ address, short }: { address: string | null; short?: boolea
 	);
 }
 
-function RowActions({ project: p }: { project: BuilderProjectListItem }) {
+function RowActions({ project: p }: { project: Project }) {
 	return (
 		<DropdownMenu modal={false}>
 			<DropdownMenuTrigger
@@ -219,28 +197,28 @@ function RowActions({ project: p }: { project: BuilderProjectListItem }) {
 						<Eye className="size-4 text-white/60" /> View details
 					</Link>
 				</DropdownMenuItem>
-				{isBuilderEditable(p.status) && (
+				{p.permissions.canEdit && (
 					<DropdownMenuItem asChild className="cursor-pointer gap-2.5 rounded-lg p-2.5 focus:bg-white/[0.06] focus:text-white">
 						<Link href={routes.editProject(p.id)}>
 							<Pencil className="size-4 text-white/60" /> Edit project
 						</Link>
 					</DropdownMenuItem>
 				)}
-				{isPubliclyVisible(p) && (
+				{isPubliclyVisible(p) && p.slug && (
 					<DropdownMenuItem asChild className="cursor-pointer gap-2.5 rounded-lg p-2.5 focus:bg-white/[0.06] focus:text-white">
 						<Link href={routes.project(p.slug)}>
 							<ExternalLink className="size-4 text-white/60" /> View public page
 						</Link>
 					</DropdownMenuItem>
 				)}
-				{p.destination_address && (
+				{p.payoutAddress && (
 					<>
 						<DropdownMenuSeparator className="bg-white/10" />
 						<DropdownMenuItem
-							onSelect={() => void copy(p.destination_address!)}
+							onSelect={() => void copy(p.payoutAddress!)}
 							className="cursor-pointer gap-2.5 rounded-lg p-2.5 focus:bg-white/[0.06] focus:text-white"
 						>
-							<Copy className="size-4 text-white/60" /> Copy wallet address
+							<Copy className="size-4 text-white/60" /> Copy payout wallet
 						</DropdownMenuItem>
 					</>
 				)}

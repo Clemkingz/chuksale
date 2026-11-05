@@ -3,67 +3,56 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Controller, useForm, useWatch } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ArrowLeft, Wallet } from "lucide-react";
-import type { BuilderProfileSummary } from "@repo/domain/types";
+import { ArrowLeft, KeyRound, LogOut } from "lucide-react";
+import type { Me, UpdateMeInput } from "@repo/domain/types";
 import { Button } from "@repo/ui/button";
-import { errorData, errorMessage, errorStatus } from "@/lib/api/errors";
+import { detailsByField, errorMessage, errorStatus } from "@/lib/api/errors";
 import { routes } from "@/lib/routes";
-import { shortKey } from "@/lib/stellar/config";
 import { notify } from "@/lib/use-toast";
-import { email, socialLinks, stellarAddress } from "@/lib/validation";
+import { isHttpsUrl } from "@/lib/validation";
 import { ErrorState } from "@/components/States";
-import { FormError, TextAreaField, TextField } from "@/components/forms/Fields";
-import { ImageDropzone } from "@/components/forms/ImageDropzone";
-import { useConnectedWallet } from "@/features/wallet/hooks";
-import { useBuilderProfile, useUpdateProfile } from "@/features/builder-projects/hooks";
+import { FormError, PasswordField, TextAreaField, TextField } from "@/components/forms/Fields";
+import { useChangePassword, useMe, useSignOutEverywhere, useUpdateMe } from "@/features/builder-auth/hooks";
 
 /**
- * Design "Edit Profile": Full Name, Short Description, Profile Image, Email + Wallet, four social links.
- * Email here is the public contact email (the sign-in email doesn't change from this form).
- * Prefilled from GET /builder/profile; saves with PATCH and goes back to the dashboard.
+ * Design "Edit Profile", tailored to the API (`PATCH /auth/me`): full name, the public display name shown on
+ * project pages, organisation, bio, website and a public contact email. Plus password change and signing out of
+ * every device. The sign-in email isn't changed here.
  */
 
-const BIO_MAX = 280;
+const BIO_MAX = 1000;
 
 const schema = z.object({
-	display_name: z.string().trim().min(2, "Enter your full name.").max(60, "Use 60 characters or fewer."),
-	bio: z.string().trim().max(BIO_MAX, `Keep it under ${BIO_MAX} characters.`),
-	avatar_url: z.string(),
-	contact_email: email,
-	wallet_address: stellarAddress(false),
-	...socialLinks,
+	name: z.string().trim().min(1, "Enter your full name.").max(100, "Use 100 characters or fewer."),
+	displayName: z.string().trim().min(1, "Enter the name to show on your projects.").max(100, "Use 100 characters or fewer."),
+	organizationName: z.string().trim().max(150, "Use 150 characters or fewer."),
+	bio: z.string().trim().max(BIO_MAX, `Keep it under ${BIO_MAX.toLocaleString()} characters.`),
+	websiteUrl: z
+		.string()
+		.trim()
+		.refine((v) => !v || isHttpsUrl(v), "Use a full https:// link."),
+	contactEmail: z
+		.string()
+		.trim()
+		.refine((v) => !v || z.email().safeParse(v).success, "Enter a valid email address."),
 });
 type Values = z.infer<typeof schema>;
+const FIELDS = ["name", "displayName", "organizationName", "bio", "websiteUrl", "contactEmail"] as const;
 
-const SERVER_FIELDS: Record<string, keyof Values> = {
-	display_name: "display_name",
-	bio: "bio",
-	avatar_url: "avatar_url",
-	contact_email: "contact_email",
-	wallet_address: "wallet_address",
-	twitter_url: "twitter",
-	discord_url: "discord",
-	telegram_url: "telegram",
-	website: "website",
-};
-
-const toValues = (p: BuilderProfileSummary): Values => ({
-	display_name: p.display_name,
-	bio: p.bio ?? "",
-	avatar_url: p.avatar_url ?? "",
-	contact_email: p.contact_email ?? p.email,
-	wallet_address: p.wallet_address ?? "",
-	twitter: p.twitter_url ?? "",
-	discord: p.discord_url ?? "",
-	telegram: p.telegram_url ?? "",
-	website: p.website ?? "",
+const toValues = (me: Me): Values => ({
+	name: me.name,
+	displayName: me.profile?.displayName ?? me.name,
+	organizationName: me.profile?.organizationName ?? "",
+	bio: me.profile?.bio ?? "",
+	websiteUrl: me.profile?.websiteUrl ?? "",
+	contactEmail: me.profile?.contactEmail ?? "",
 });
 
 export function EditProfileForm() {
-	const profile = useBuilderProfile();
+	const me = useMe();
 
 	return (
 		<div className="app-container py-10 md:py-[72px]">
@@ -84,33 +73,33 @@ export function EditProfileForm() {
 					</h1>
 				</div>
 
-				{profile.data ? (
+				{me.data ? (
 					// Mounted once with the saved values; a background refetch never resets what's being typed.
-					<ProfileForm initial={toValues(profile.data)} />
-				) : profile.isError ? (
+					<ProfileForm me={me.data} />
+				) : me.isError ? (
 					<ErrorState
 						className="mt-8"
 						title="We couldn’t load your profile"
-						message={errorMessage(profile.error)}
-						onRetry={() => void profile.refetch()}
-						retrying={profile.isFetching}
+						message={errorMessage(me.error)}
+						onRetry={() => void me.refetch()}
+						retrying={me.isFetching}
 					/>
 				) : (
 					<FormSkeleton />
 				)}
 			</section>
+
+			{me.data && <Security />}
 		</div>
 	);
 }
 
-function ProfileForm({ initial }: { initial: Values }) {
+function ProfileForm({ me }: { me: Me }) {
 	const router = useRouter();
-	const save = useUpdateProfile();
-	const { address } = useConnectedWallet();
-	const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: initial, mode: "onTouched" });
+	const save = useUpdateMe();
+	const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: toValues(me), mode: "onTouched" });
 	const { errors, isDirty } = form.formState;
 	const bio = useWatch({ control: form.control, name: "bio" });
-	const wallet = useWatch({ control: form.control, name: "wallet_address" });
 
 	const guard = isDirty && !save.isSuccess;
 	useEffect(() => {
@@ -120,132 +109,86 @@ function ProfileForm({ initial }: { initial: Values }) {
 		return () => window.removeEventListener("beforeunload", onBeforeUnload);
 	}, [guard]);
 
-	const onSubmit = form.handleSubmit((v) =>
-		save.mutate(
-			{
-				display_name: v.display_name,
-				bio: v.bio,
-				avatar_url: v.avatar_url,
-				contact_email: v.contact_email,
-				wallet_address: v.wallet_address.toUpperCase(),
-				twitter_url: v.twitter,
-				discord_url: v.discord,
-				telegram_url: v.telegram,
-				website: v.website,
+	const onSubmit = form.handleSubmit((v) => {
+		// Only documented fields; "" clears an optional one (null).
+		const input: UpdateMeInput = {
+			name: v.name,
+			displayName: v.displayName,
+			organizationName: v.organizationName || null,
+			bio: v.bio || null,
+			websiteUrl: v.websiteUrl || null,
+			contactEmail: v.contactEmail || null,
+		};
+		save.mutate(input, {
+			onSuccess: () => {
+				notify.success("Profile updated");
+				router.push(routes.dashboard);
 			},
-			{
-				onSuccess: () => {
-					notify.success("Profile updated");
-					router.push(routes.dashboard);
-				},
-				onError: (error) => {
-					const field = SERVER_FIELDS[String(errorData(error)?.field ?? "")];
-					if (errorStatus(error) === 422 && field) form.setError(field, { message: errorMessage(error) }, { shouldFocus: true });
-				},
+			onError: (e) => {
+				const byField = detailsByField(e);
+				for (const f of FIELDS) if (byField[f]) form.setError(f, { message: byField[f] }, { shouldFocus: true });
 			},
-		),
-	);
-	const serverFieldError = errorStatus(save.error) === 422 && !!SERVER_FIELDS[String(errorData(save.error)?.field ?? "")];
+		});
+	});
+	const fieldErrors = save.isError ? detailsByField(save.error) : {};
 
 	return (
 		<form noValidate onSubmit={onSubmit} className="mt-6 flex flex-col gap-5 md:mt-8 md:gap-6">
-			<TextField label="Full Name" autoComplete="name" error={errors.display_name?.message} {...form.register("display_name")} />
+			<div className="grid gap-5 md:grid-cols-2">
+				<TextField label="Full Name" autoComplete="name" error={errors.name?.message} {...form.register("name")} />
+				<TextField
+					label="Display name"
+					autoComplete="nickname"
+					error={errors.displayName?.message}
+					hint={<p className="mt-1.5 text-xs text-white/45">Shown on your public project pages.</p>}
+					{...form.register("displayName")}
+				/>
+			</div>
+			<TextField
+				label="Organisation (optional)"
+				autoComplete="organization"
+				error={errors.organizationName?.message}
+				{...form.register("organizationName")}
+			/>
 			<TextAreaField
-				label="Short Description"
-				placeholder="What you build and who it’s for."
+				label="Short Description (optional)"
 				maxLength={BIO_MAX}
 				count={bio.length}
+				rows={4}
+				placeholder="Who you are and what you build."
 				error={errors.bio?.message}
 				{...form.register("bio")}
 			/>
-			<Controller
-				control={form.control}
-				name="avatar_url"
-				render={({ field, fieldState }) => (
-					<ImageDropzone
-						label="Profile Image"
-						round
-						value={field.value}
-						onChange={field.onChange}
-						error={fieldState.error?.message}
-					/>
-				)}
-			/>
-			<div className="grid gap-5 md:grid-cols-2 md:gap-x-5 md:gap-y-6">
+			<div className="grid gap-5 md:grid-cols-2">
 				<TextField
-					label="Email Address"
-					type="email"
-					inputMode="email"
-					autoComplete="email"
-					error={errors.contact_email?.message}
-					hint={<p className="mt-1.5 text-xs text-white/45">Where admins and the community can reach you.</p>}
-					{...form.register("contact_email")}
-				/>
-				<TextField
-					label="Wallet Address"
-					autoComplete="off"
-					spellCheck={false}
-					placeholder="G…"
-					className="min-w-0"
-					error={errors.wallet_address?.message}
-					hint={
-						address && wallet.toUpperCase() !== address ? (
-							<button
-								type="button"
-								onClick={() => form.setValue("wallet_address", address, { shouldValidate: true, shouldDirty: true })}
-								className="animate-rise mt-2 inline-flex items-center gap-1.5 text-sm text-primary-300 hover:text-primary-200"
-							>
-								<Wallet className="size-3.5" aria-hidden /> Use connected wallet ({shortKey(address, 4, 4)})
-							</button>
-						) : (
-							<p className="mt-1.5 text-xs text-white/45">Your public Stellar address, shown on your profile.</p>
-						)
-					}
-					{...form.register("wallet_address")}
-				/>
-				<TextField
-					label="Twitter Page link"
-					type="url"
-					inputMode="url"
-					placeholder="https://x.com/…"
-					error={errors.twitter?.message}
-					{...form.register("twitter")}
-				/>
-				<TextField
-					label="Discord Server link"
-					type="url"
-					inputMode="url"
-					placeholder="https://discord.gg/…"
-					error={errors.discord?.message}
-					{...form.register("discord")}
-				/>
-				<TextField
-					label="Telegram Group link"
-					type="url"
-					inputMode="url"
-					placeholder="https://t.me/…"
-					error={errors.telegram?.message}
-					{...form.register("telegram")}
-				/>
-				<TextField
-					label="Website link"
+					label="Website (optional)"
 					type="url"
 					inputMode="url"
 					placeholder="https://…"
-					error={errors.website?.message}
-					{...form.register("website")}
+					error={errors.websiteUrl?.message}
+					{...form.register("websiteUrl")}
+				/>
+				<TextField
+					label="Public contact email (optional)"
+					type="email"
+					inputMode="email"
+					placeholder={me.email}
+					error={errors.contactEmail?.message}
+					{...form.register("contactEmail")}
 				/>
 			</div>
+			<p className="-mt-2 text-xs text-white/45">
+				You sign in as <span className="text-white/70">{me.email}</span>. That address is never shown publicly.
+			</p>
 
-			<FormError message={save.isError && !serverFieldError ? errorMessage(save.error) : null} />
+			<FormError message={save.isError && !FIELDS.some((f) => fieldErrors[f]) ? errorMessage(save.error) : null} />
 
 			<Button
 				type="submit"
 				size="lg"
-				className="mt-2 h-14 w-full text-base md:h-[62px] md:text-lg"
+				className="mt-1 h-14 w-full text-base md:h-[62px] md:text-lg"
 				isLoading={save.isPending}
 				loadingLabel="Saving your profile"
-				disabled={!isDirty && !save.isPending}
 			>
 				Save changes
 			</Button>
@@ -253,10 +196,108 @@ function ProfileForm({ initial }: { initial: Values }) {
 	);
 }
 
+const passwordSchema = z
+	.object({
+		currentPassword: z.string().min(1, "Enter your current password."),
+		newPassword: z.string().min(8, "Use at least 8 characters.").max(128, "Use 128 characters or fewer."),
+		confirm: z.string().min(1, "Confirm the new password."),
+	})
+	.refine((v) => v.newPassword === v.confirm, { path: ["confirm"], message: "Passwords don’t match." });
+type PasswordValues = z.infer<typeof passwordSchema>;
+
+/** Change password (other sessions end; this one stays) and sign out everywhere. */
+function Security() {
+	const router = useRouter();
+	const change = useChangePassword();
+	const everywhere = useSignOutEverywhere();
+	const form = useForm<PasswordValues>({
+		resolver: zodResolver(passwordSchema),
+		defaultValues: { currentPassword: "", newPassword: "", confirm: "" },
+		mode: "onTouched",
+	});
+	const { errors } = form.formState;
+
+	const onSubmit = form.handleSubmit((v) =>
+		change.mutate(
+			{ currentPassword: v.currentPassword, newPassword: v.newPassword },
+			{
+				onSuccess: () => {
+					notify.success("Password changed", "You’re still signed in here; other devices were signed out.");
+					form.reset();
+				},
+				onError: (e) => {
+					// A wrong current password is a 400 (never a refresh).
+					if (errorStatus(e) === 400 && !detailsByField(e).newPassword)
+						form.setError("currentPassword", { message: errorMessage(e) }, { shouldFocus: true });
+					else if (detailsByField(e).newPassword) form.setError("newPassword", { message: detailsByField(e).newPassword });
+				},
+			},
+		),
+	);
+
+	return (
+		<section
+			aria-labelledby="security-title"
+			data-reveal="up"
+			className="mx-auto mt-6 w-full max-w-[670px] rounded-[24px] bg-[#16161B] px-5 py-8 sm:px-8 md:px-10"
+		>
+			<h2 id="security-title" className="flex items-center gap-2 font-display text-2xl font-bold">
+				<KeyRound className="size-5 text-primary-300" aria-hidden /> Password &amp; sessions
+			</h2>
+			<form noValidate onSubmit={onSubmit} className="mt-6 flex flex-col gap-5">
+				<PasswordField
+					label="Current password"
+					autoComplete="current-password"
+					error={errors.currentPassword?.message}
+					{...form.register("currentPassword")}
+				/>
+				<div className="grid gap-5 md:grid-cols-2">
+					<PasswordField
+						label="New password"
+						autoComplete="new-password"
+						error={errors.newPassword?.message}
+						{...form.register("newPassword")}
+					/>
+					<PasswordField
+						label="Confirm new password"
+						autoComplete="new-password"
+						error={errors.confirm?.message}
+						{...form.register("confirm")}
+					/>
+				</div>
+				<FormError message={change.isError && errorStatus(change.error) !== 400 ? errorMessage(change.error) : null} />
+				<Button type="submit" variant="outline" className="h-12 sm:w-auto sm:self-start sm:px-6" isLoading={change.isPending} loadingLabel="Changing password">
+					Change password
+				</Button>
+			</form>
+			<div className="mt-8 flex flex-col gap-3 border-t border-white/10 pt-6 sm:flex-row sm:items-center sm:justify-between">
+				<p className="text-sm text-white/65">Lost a device? Sign out of Chucksales everywhere, including here.</p>
+				<Button
+					variant="ghost"
+					className="h-11 w-auto shrink-0 gap-2 px-4 text-error-200 hover:bg-error-400/10"
+					isLoading={everywhere.isPending}
+					loadingLabel="Signing out everywhere"
+					onClick={() =>
+						everywhere.mutate(undefined, {
+							onSuccess: () => {
+								notify.info("Signed out everywhere");
+								router.replace(routes.signIn);
+							},
+							onError: (e) => notify.fromError(e),
+						})
+					}
+				>
+					<LogOut className="size-4" /> Sign out everywhere
+				</Button>
+			</div>
+		</section>
+	);
+}
+
 function FormSkeleton() {
 	return (
 		<div aria-hidden className="mt-8 flex flex-col gap-6">
-			{[48, 140, 150, 48, 48, 48].map((h, i) => (
+			{[48, 48, 140, 48, 48].map((h, i) => (
 				<div key={i} className="flex flex-col gap-2.5">
 					<span className="skeleton-shimmer block h-4 w-28 rounded" />
 					<span className="skeleton-shimmer block w-full rounded-lg" style={{ height: h }} />

@@ -15,8 +15,8 @@ export const notify = {
 	loading: (message: string, description?: string) => toast.loading(message, { description }),
 	dismiss: (id?: string | number) => toast.dismiss(id),
 	/** Mock mode stands in for email: shows the code the API "sent". */
-	demoInbox: (code: string, email: string) =>
-		toast.info(`Demo inbox: your code is ${code}`, { description: `Sent to ${email}. Mock mode only.`, duration: 15000 }),
+	demoInbox: (email: string) =>
+		toast.info("Demo inbox: any 6-digit code works", { description: `“Sent” to ${email}. Mock mode only.`, duration: 15000 }),
 };
 
 /** Kept as a hook so call sites from the reference pattern stay the same. */

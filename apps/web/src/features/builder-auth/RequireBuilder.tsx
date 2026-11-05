@@ -1,26 +1,21 @@
 "use client";
 
-import { useEffect, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { routes } from "@/lib/routes";
 import { BrandLoader } from "@/components/BrandLoader";
-import { isExpired, useBuilderSession } from "@/features/builder-auth/session";
-
-const subscribe = (cb: () => void) => useBuilderSession.persist.onFinishHydration(cb);
-const hydrated = () => useBuilderSession.persist.hasHydrated();
+import { useSignedIn } from "@/features/builder-auth/session";
 
 /** Sends signed-out visitors to sign-in, and back here afterwards (`?next=`). */
 export function RequireBuilder({ children }: { children: ReactNode }) {
 	const router = useRouter();
 	const pathname = usePathname();
-	const ready = useSyncExternalStore(subscribe, hydrated, () => false);
-	const { token, expiresAt } = useBuilderSession();
-	const signedIn = !!token && !isExpired(expiresAt);
+	const signedIn = useSignedIn();
 
 	useEffect(() => {
-		if (ready && !signedIn) router.replace(`${routes.signIn}?next=${encodeURIComponent(pathname)}`);
-	}, [ready, signedIn, router, pathname]);
+		if (signedIn === false) router.replace(`${routes.signIn}?next=${encodeURIComponent(pathname)}`);
+	}, [signedIn, router, pathname]);
 
-	if (!ready || !signedIn) return <BrandLoader label={ready ? "Taking you to sign in" : "Checking your session"} />;
+	if (!signedIn) return <BrandLoader label={signedIn === null ? "Checking your session" : "Taking you to sign in"} />;
 	return <>{children}</>;
 }

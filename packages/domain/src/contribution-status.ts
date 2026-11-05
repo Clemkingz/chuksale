@@ -1,27 +1,16 @@
 import type { ContributionStatus } from "./types";
 
 /**
- * Contribution lifecycle (PRD §8.3). Only `confirmed` is ever counted toward a project's raised total, and only
- * the backend (today: the mock verifier) may set it. The UI never infers success from a closed wallet popup.
+ * Contribution lifecycle (backend guide, "Contributions"). Only `confirmed` counts toward totals, and only the
+ * backend sets it. The UI never infers success from a closed wallet popup.
  */
 
-export const CONTRIBUTION_TRANSITIONS: Record<ContributionStatus, readonly ContributionStatus[]> = {
-	created: ["awaiting_wallet", "cancelled", "expired"],
-	awaiting_wallet: ["pending", "cancelled", "expired", "failed"],
-	pending: ["confirmed", "failed"],
-	confirmed: [],
-	failed: [],
-	expired: [],
-	cancelled: [],
-};
-
-export const isFinal = (s: ContributionStatus) => CONTRIBUTION_TRANSITIONS[s].length === 0;
+export const isFinal = (s: ContributionStatus) => s === "confirmed" || s === "failed" || s === "expired";
 
 export const countsTowardTotal = (s: ContributionStatus) => s === "confirmed";
 
-export function canMove(from: ContributionStatus, to: ContributionStatus) {
-	return CONTRIBUTION_TRANSITIONS[from].includes(to);
-}
+/** Still worth polling `GET /contributions/{id}`. */
+export const isInFlight = (s: ContributionStatus) => s === "pending";
 
-/** A failed / expired / cancelled attempt may start a NEW intent; a pending one may not (it might still land). */
-export const canRetry = (s: ContributionStatus) => s === "failed" || s === "expired" || s === "cancelled";
+/** A failed or expired attempt can start again with a new prepare; a pending one may still land. */
+export const canRetry = (s: ContributionStatus) => s === "failed" || s === "expired";

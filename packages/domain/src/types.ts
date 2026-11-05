@@ -1,8 +1,10 @@
 /**
- * Domain records shared by web, admin and the mock backend (PRD §9). Shapes here are the API contract:
- * the mock answers with them now, and the real backend must answer with them later.
+ * The ChuckSales API contract (backend `/docs-json`, OpenAPI 3, checked 2026-11-05). These are the exact shapes the
+ * live backend answers with; the mock backend (`@repo/mock-api`, opt-in) answers with the same ones.
  *
- * Money is ALWAYS a decimal string (e.g. "125.5000000"), never a JS number (PRD §9, rule 9). Use `money.ts`.
+ * - Amounts are decimal strings with up to 7 places ("12.5"), for XLM and USDC alike. Never JS numbers: use `money.ts`.
+ * - Assets are identified by `id` ("XLM" or "CODE:ISSUER"), never by code alone.
+ * - Timestamps are ISO 8601 UTC; ids are UUID strings (audit log ids are numbers).
  */
 
 export type ISODate = string;
@@ -11,99 +13,238 @@ export type Amount = string;
 /** Stellar public key (G…). Public data, never a secret. */
 export type StellarAddress = string;
 
-// ---------------------------------------------------------------- users
+// ---------------------------------------------------------------- envelope
 
-export type UserRole = "builder" | "admin";
+export interface ApiSuccess<T> {
+	statusCode: number;
+	message: string;
+	data: T;
+}
 
-export interface User {
-	id: string;
+export interface ApiErrorBody {
+	statusCode: number;
+	message: string;
+	data: null;
+	error: {
+		code: string;
+		/** Validation errors: one sentence per problem, in form order. */
+		details?: string[] | Record<string, unknown>;
+		requestId?: string;
+		traceId?: string;
+		timestamp: string;
+		path: string;
+		retryAfterSeconds?: number;
+	};
+}
+
+export interface PaginationMeta {
+	nextPage: boolean;
+	previousPage: boolean;
+	currentPage: number;
+	totalPage: number;
+	totalCount: number;
+	pageCount: number;
+}
+
+/** `?limit=1..100&offset=n` lists. */
+export interface Page<T> {
+	result: T[];
+	paginationMeta: PaginationMeta;
+}
+
+export interface PageQuery {
+	limit?: number;
+	offset?: number;
+}
+
+// ---------------------------------------------------------------- auth + accounts
+
+export type Role = "builder" | "admin";
+
+export interface AuthTokens {
+	accessToken: string;
+	refreshToken: string;
+	tokenType: "Bearer";
+	/** Seconds (900). */
+	expiresIn: number;
+	role: Role;
+}
+
+export interface OtpIssued {
+	otpExpiresInSeconds: number;
+	resendAfterSeconds: number;
+}
+
+export interface RegisterResult extends OtpIssued {
 	email: string;
-	role: UserRole;
-	email_verified: boolean;
-	status: "active" | "suspended";
-	created_at: ISODate;
-	updated_at: ISODate;
+}
+
+export interface RegisterInput {
+	name: string;
+	email: string;
+	password: string;
+	organizationName?: string;
 }
 
 export interface BuilderProfile {
-	id: string;
-	user_id: string;
-	display_name: string;
-	organization_name: string | null;
+	displayName: string;
+	organizationName: string | null;
 	bio: string | null;
-	website: string | null;
-	contact_email: string;
-	/** Profile photo (data URL in the mock). Null → initials. */
-	avatar_url: string | null;
-	/** Builder's own Stellar address shown on their profile (D17). Projects keep their own `destination_address`. */
-	wallet_address: StellarAddress | null;
-	twitter_url: string | null;
-	discord_url: string | null;
-	telegram_url: string | null;
+	websiteUrl: string | null;
+	contactEmail: string | null;
 }
 
-/** GET /builder/profile: the dashboard header and the Edit Profile form. `email` is the sign-in email (not editable here). */
-export interface BuilderProfileSummary extends Pick<
-	BuilderProfile,
-	| "display_name"
-	| "organization_name"
-	| "bio"
-	| "avatar_url"
-	| "wallet_address"
-	| "contact_email"
-	| "website"
-	| "twitter_url"
-	| "discord_url"
-	| "telegram_url"
-> {
+export interface Me {
+	id: string;
 	email: string;
-	joined_at: ISODate;
+	role: Role;
+	name: string;
+	/** Null for admins. */
+	profile: BuilderProfile | null;
+	createdAt: ISODate;
 }
 
-/** PATCH /builder/profile (design "Edit Profile"). Empty strings clear optional fields. */
-export interface UpdateProfileInput {
-	display_name: string;
-	bio: string;
-	avatar_url: string;
-	contact_email: string;
-	wallet_address: string;
-	twitter_url: string;
-	discord_url: string;
-	telegram_url: string;
-	website: string;
+/** PATCH /auth/me: any subset; "" or null clears an optional field. Admins may send `name` only. */
+export interface UpdateMeInput {
+	name?: string;
+	displayName?: string;
+	organizationName?: string | null;
+	bio?: string | null;
+	websiteUrl?: string | null;
+	contactEmail?: string | null;
 }
 
-// ---------------------------------------------------------------- projects
+export interface UserSummary {
+	id: string;
+	email: string;
+	name: string;
+	role: Role;
+	emailVerified: boolean;
+	suspended: boolean;
+	createdAt: ISODate;
+}
 
-/** See `project-status.ts` for the allowed transitions. */
-export type ProjectStatus = "draft" | "submitted" | "under_review" | "changes_requested" | "approved" | "rejected" | "archived";
+export interface UserDetail extends UserSummary {
+	suspension: { reason: string; suspendedBy: string; suspendedAt: ISODate } | null;
+}
 
-/** Approved projects can still be hidden; only approved + published is public (FR-REV-05). */
-export type ProjectVisibility = "published" | "unpublished";
+export interface CreatedAdmin {
+	id: string;
+	email: string;
+	name: string;
+	role: "admin";
+	createdAt: ISODate;
+	otpExpiresInSeconds: number;
+}
 
-export type ProjectType = "new_idea" | "existing_project";
+export interface AuditLogEntry {
+	id: number;
+	at: ISODate;
+	actorId: string | null;
+	action: string;
+	resourceType: string | null;
+	resourceId: string | null;
+	requestId: string | null;
+	traceId: string | null;
+	ip: string | null;
+	metadata: Record<string, unknown>;
+	before: Record<string, unknown> | null;
+	after: Record<string, unknown> | null;
+}
 
-export type ProjectStage = "idea" | "prototype" | "mvp" | "live" | "scaling";
+// ---------------------------------------------------------------- stellar
+
+export type StellarNetwork = "testnet" | "mainnet";
+
+export interface StellarAsset {
+	/** "XLM" or "CODE:ISSUER". */
+	id: string;
+	code: string;
+	issuer: string | null;
+	native: boolean;
+}
+
+export interface StellarNetworkInfo {
+	network: StellarNetwork;
+	networkPassphrase: string;
+	horizonUrl: string;
+	explorerUrl: string;
+	assets: StellarAsset[];
+	platformAccount: string | null;
+}
+
+export interface AccountAsset extends StellarAsset {
+	trusted: boolean;
+	balance: Amount | null;
+}
+
+export interface StellarAccountSummary {
+	address: StellarAddress;
+	shortAddress: string;
+	exists: boolean;
+	explorerUrl: string;
+	assets: AccountAsset[];
+}
+
+// ---------------------------------------------------------------- wallet sign-in (SEP-10)
+
+export interface WalletChallenge {
+	transaction: string;
+	networkPassphrase: string;
+	homeDomain: string;
+	expiresAt: ISODate;
+}
+
+export interface WalletSessionInfo {
+	address: StellarAddress;
+	shortAddress: string;
+	networkPassphrase: string;
+	expiresAt: ISODate;
+}
+
+export interface WalletToken extends WalletSessionInfo {
+	walletToken: string;
+	tokenType: "Bearer";
+	expiresIn: number;
+}
+
+// ---------------------------------------------------------------- categories
 
 export interface Category {
 	id: string;
 	name: string;
 	slug: string;
-	is_active: boolean;
 }
 
-/** An allowlisted Stellar asset (PRD §8.4). XLM has `issuer: null`. */
-export interface AcceptedAsset {
-	id: string;
-	code: string;
-	issuer: StellarAddress | null;
-	label: string;
+export interface PublicCategory extends Category {
+	publishedProjectCount: number;
 }
+
+export interface AdminCategory extends Category {
+	isActive: boolean;
+	sortOrder: number;
+	projectCount: number;
+}
+
+// ---------------------------------------------------------------- projects
+
+export type ProjectType = "new_idea" | "existing_project";
+export type ProjectStatus = "draft" | "submitted" | "under_review" | "changes_requested" | "approved" | "rejected" | "archived";
+export type ProjectStage = "idea" | "prototype" | "mvp" | "launched" | "scaling";
+export type ProjectAction =
+	| "start_review"
+	| "approve"
+	| "reject"
+	| "request_changes"
+	| "publish"
+	| "unpublish"
+	| "archive"
+	| "feature"
+	| "unfeature";
 
 export interface TeamMember {
 	name: string;
 	role: string;
-	link?: string;
 }
 
 export interface ProjectLink {
@@ -111,399 +252,418 @@ export interface ProjectLink {
 	url: string;
 }
 
+/** POST /builder/projects (type + title required) and PATCH (send only what changed). */
+export interface ProjectInput {
+	type?: ProjectType;
+	title?: string;
+	summary?: string | null;
+	problem?: string | null;
+	solution?: string | null;
+	categoryId?: string | null;
+	stage?: ProjectStage | null;
+	beneficiaries?: string | null;
+	teamMembers?: TeamMember[];
+	links?: ProjectLink[];
+	fundraisingEnabled?: boolean;
+	targetAmount?: Amount | null;
+	targetAssetId?: string | null;
+	acceptedAssetIds?: string[];
+	payoutAddress?: StellarAddress | null;
+}
+
+export interface Feedback {
+	action: ProjectAction;
+	fromStatus: ProjectStatus;
+	toStatus: ProjectStatus;
+	/** Shown to the builder. */
+	reason: string | null;
+	revision: number;
+	at: ISODate;
+}
+
+export interface ProjectPermissions {
+	canEdit: boolean;
+	canSubmit: boolean;
+	canDelete: boolean;
+}
+
+/** A builder's own project (GET /builder/projects/{id}). */
 export interface Project {
 	id: string;
-	owner_user_id: string;
-	title: string;
-	slug: string;
-	project_type: ProjectType;
-	summary: string;
-	problem: string;
-	solution: string;
-	beneficiaries: string;
-	category_id: string | null;
-	stage: ProjectStage | null;
-	cover_image_url: string | null;
-	/** Square project logo (design "Add Project": 350×350 recommended). Data URL in the mock. */
-	logo_url: string | null;
-	/** Project contact email (design "Add Project"); can differ from the builder's account email. */
-	contact_email: string | null;
-	team: TeamMember[];
-	links: ProjectLink[];
-	/** Fundraising enabled for this project. */
-	fundraising: boolean;
-	/** Informational target, not a hard cap (PRD §17 default). */
-	target_amount: Amount | null;
-	target_asset_id: string | null;
-	/** Direct-payment funds flow: contributions go straight here (docs/DECISIONS.md D1). */
-	destination_address: StellarAddress | null;
+	type: ProjectType;
 	status: ProjectStatus;
-	visibility: ProjectVisibility;
-	featured: boolean;
-	submitted_at: ISODate | null;
-	approved_at: ISODate | null;
-	/** End of the fundraising window, shown as "Time left" (D20, PENDING: the PRD has no deadline). */
-	ends_at: ISODate | null;
-	created_at: ISODate;
-	updated_at: ISODate;
-}
-
-/** A row on the builder dashboard (GET /builder/projects). Raised = confirmed contributions only. */
-export interface BuilderProjectListItem extends Pick<
-	Project,
-	| "id"
-	| "title"
-	| "slug"
-	| "logo_url"
-	| "status"
-	| "visibility"
-	| "fundraising"
-	| "target_amount"
-	| "destination_address"
-	| "ends_at"
-	| "created_at"
-	| "updated_at"
-> {
-	category: Pick<Category, "id" | "name"> | null;
-	target_asset: Pick<AcceptedAsset, "id" | "code"> | null;
-	raised_amount: Amount;
-	contributor_count: number;
-}
-
-/** POST /builder/projects (design "Add Project"): creates the project and submits it for review. */
-export interface CreateProjectInput {
 	title: string;
-	logo_url: string;
-	contact_email: string;
-	destination_address: StellarAddress;
-	links: { twitter?: string; discord?: string; telegram?: string; website?: string };
+	slug: string | null;
+	summary: string | null;
+	problem: string | null;
+	solution: string | null;
+	category: Category | null;
+	stage: ProjectStage | null;
+	beneficiaries: string | null;
+	teamMembers: TeamMember[];
+	links: ProjectLink[];
+	/** Signed link, expires in about an hour: refetch, never store. */
+	coverImageUrl: string | null;
+	fundraisingEnabled: boolean;
+	targetAmount: Amount | null;
+	targetAsset: StellarAsset | null;
+	acceptedAssets: StellarAsset[];
+	payoutAddress: StellarAddress | null;
+	published: boolean;
+	featured: boolean;
+	revision: number;
+	submittedAt: ISODate | null;
+	decidedAt: ISODate | null;
+	publishedAt: ISODate | null;
+	createdAt: ISODate;
+	updatedAt: ISODate;
+	latestFeedback: Feedback | null;
+	permissions: ProjectPermissions;
 }
 
-/** GET /admin/projects row (design "admin page 2"). */
-export interface AdminProjectListItem extends Pick<
-	Project,
-	| "id"
-	| "title"
-	| "slug"
-	| "logo_url"
-	| "status"
-	| "visibility"
-	| "featured"
-	| "destination_address"
-	| "submitted_at"
-	| "created_at"
-> {
-	builder: { name: string; email: string };
-	target_asset: Pick<AcceptedAsset, "id" | "code"> | null;
-	target_amount: Amount | null;
-	raised_amount: Amount;
-}
-
-/** GET /admin/overview (design "admin page 1"). Amounts are confirmed contributions, XLM only for now. */
-export interface AdminOverview {
-	stats: { contributors: number; builders: number; projects: number; total_raised: Amount; asset_code: string };
-	range: "week" | "month" | "quarter";
-	series: { label: string; start: ISODate; amount: Amount; count: number }[];
-	period_total: Amount;
-	/** Live projects: raised vs target ("Project Analysis"). */
-	progress: { raised: Amount; target: Amount; percent: number | null };
-	recent: { id: string; title: string; builder: string; status: ProjectStatus; submitted_at: ISODate | null }[];
-	trending: {
-		id: string;
-		title: string;
-		slug: string;
-		logo_url: string | null;
-		builder: string;
-		period_amount: Amount;
-		period_contributors: number;
-		recent_wallets: StellarAddress[];
-	}[];
-	pending_reviews: number;
-}
-
-/** GET /admin/contributors row (design "admin page 5"): one per wallet (contributors have no accounts). */
-export interface AdminContributor {
-	wallet_address: StellarAddress;
-	total_amount: Amount;
-	asset_code: string;
-	/** Share of everything contributed on the platform. */
-	share_percent: number;
-	contribution_count: number;
-	project_count: number;
-	last_contributed_at: ISODate;
-}
-
-/** GET /admin/builders row (design "admin developer D1"). */
-export interface AdminBuilder {
+export interface ProjectOwner {
 	id: string;
 	name: string;
 	email: string;
-	avatar_url: string | null;
-	wallet_address: StellarAddress | null;
-	status: "active" | "suspended";
-	joined_at: ISODate;
-	project_count: number;
-	latest_project: { id: string; title: string; logo_url: string | null } | null;
-	raised_amount: Amount;
+	displayName: string | null;
+	organizationName: string | null;
 }
 
-/** GET /admin/builders/:id/projects row (design "admin developer D2"). */
-export interface AdminBuilderProject extends Pick<
-	Project,
-	| "id"
-	| "title"
-	| "logo_url"
-	| "slug"
-	| "status"
-	| "visibility"
-	| "featured"
-	| "destination_address"
-	| "target_amount"
-	| "ends_at"
-> {
-	raised_amount: Amount;
-	contributor_count: number;
-	target_asset: Pick<AcceptedAsset, "id" | "code"> | null;
+export interface AdminReview extends Feedback {
+	id: number;
+	adminId: string;
+	adminName: string | null;
+	/** Admins only. */
+	internalNote: string | null;
 }
 
-/** The signed-in admin's own account (design "admin page 6", Account settings). */
-export interface AdminAccount {
-	first_name: string;
-	last_name: string;
-	email: string;
-	phone: string | null;
-	/** Shown under the name, e.g. "Lead Admin". */
-	bio: string | null;
-	country: string | null;
-	city: string | null;
-	postal_code: string | null;
-	avatar_url: string | null;
-	mfa_enabled: boolean;
-	password_changed_at: ISODate | null;
-	notifications: AdminNotificationPrefs;
+export interface AdminProject extends Project {
+	owner: ProjectOwner;
+	reviews: AdminReview[];
 }
 
-export interface AdminNotificationPrefs {
-	new_submissions: boolean;
-	resubmissions: boolean;
-	reported_suggestions: boolean;
-	contribution_issues: boolean;
-	weekly_summary: boolean;
-}
-
-/** What public endpoints return: no owner email, no internal notes. */
-export interface PublicProject extends Omit<Project, "owner_user_id" | "status" | "visibility" | "submitted_at"> {
-	owner: Pick<BuilderProfile, "display_name" | "organization_name" | "website">;
-	category: Category | null;
-	target_asset: AcceptedAsset | null;
-	/** Sum of CONFIRMED contributions only (FR-CON-03). */
-	raised_amount: Amount;
-	contributor_count: number;
-	suggestion_count: number;
-}
-
-export interface ProjectRevision {
+export interface AdminProjectSummary {
 	id: string;
-	project_id: string;
-	revision_number: number;
-	submitted_payload: Partial<Project>;
-	created_by: string;
-	created_at: ISODate;
-}
-
-export type ReviewDecision = "under_review" | "approve" | "reject" | "request_changes";
-
-export interface ProjectReview {
-	id: string;
-	project_id: string;
-	admin_user_id: string;
-	decision: ReviewDecision;
-	/** Visible to the builder. Required for reject / request_changes (FR-REV-03). */
-	reason: string | null;
-	/** Admin-only. Never sent to builder or public endpoints. */
-	internal_note: string | null;
-	created_at: ISODate;
-}
-
-export interface ProjectUpdate {
-	id: string;
-	project_id: string;
-	author_user_id: string;
 	title: string;
-	body: string;
-	visibility: "public" | "private";
-	created_at: ISODate;
+	type: ProjectType;
+	status: ProjectStatus;
+	category: Category | null;
+	published: boolean;
+	featured: boolean;
+	revision: number;
+	owner: ProjectOwner;
+	submittedAt: ISODate | null;
+	updatedAt: ISODate;
 }
 
-// ---------------------------------------------------------------- wallet + contributions
-
-export type StellarNetwork = "testnet" | "mainnet";
-
-export interface WalletSession {
-	id: string;
-	public_address: StellarAddress;
-	network: StellarNetwork;
-	connected_at: ISODate;
-	last_seen_at: ISODate;
-	session_expiry: ISODate;
+export interface RevisionSummary {
+	revision: number;
+	submittedBy: string;
+	submittedAt: ISODate;
 }
 
-/** See `contribution-status.ts`. Only `confirmed` counts toward totals. */
-export type ContributionStatus = "created" | "awaiting_wallet" | "pending" | "confirmed" | "failed" | "expired" | "cancelled";
+export interface Revision extends RevisionSummary {
+	snapshot: Record<string, unknown>;
+}
 
-export interface ContributionIntent {
-	id: string;
-	project_id: string;
-	wallet_address: StellarAddress;
-	asset_id: string;
+export interface PublicProjectsQuery extends PageQuery {
+	q?: string;
+	/** Category slug. */
+	category?: string;
+	stage?: ProjectStage;
+	type?: ProjectType;
+	featured?: boolean;
+	fundraising?: boolean;
+	/** Asset id. */
+	asset?: string;
+	sort?: "featured" | "newest" | "title";
+}
+
+export interface RaisedAmount {
+	asset: StellarAsset;
 	amount: Amount;
-	/** Text memo the payment must carry so the verifier can match it (e.g. "CSP-7K2Q9X"). */
-	reference: string;
-	destination_address: StellarAddress;
-	status: ContributionStatus;
-	expires_at: ISODate;
-	created_at: ISODate;
+}
+
+export interface PublicFunding {
+	/** Confirmed totals per asset. Never add different assets together. */
+	raised: RaisedAmount[];
+	contributionCount: number;
+	targetAmount: Amount | null;
+	targetAsset: StellarAsset | null;
+	acceptedAssets: StellarAsset[];
+}
+
+export interface PublicProjectCard {
+	id: string;
+	slug: string;
+	title: string;
+	summary: string;
+	type: ProjectType;
+	stage: ProjectStage;
+	category: Category;
+	coverImageUrl: string | null;
+	featured: boolean;
+	builder: { displayName: string | null; organizationName: string | null };
+	fundraisingEnabled: boolean;
+	/** Null when not fundraising. */
+	funding: PublicFunding | null;
+	publishedAt: ISODate;
+}
+
+export interface PublicProject extends Omit<PublicProjectCard, "builder"> {
+	problem: string;
+	solution: string;
+	beneficiaries: string;
+	teamMembers: TeamMember[];
+	links: ProjectLink[];
+	builder: {
+		displayName: string | null;
+		organizationName: string | null;
+		bio: string | null;
+		websiteUrl: string | null;
+		contactEmail: string | null;
+	};
+	/** Where contributions are paid; null when not fundraising. */
+	payoutAddress: StellarAddress | null;
+	updatedAt: ISODate;
+}
+
+// ---------------------------------------------------------------- contributions
+
+export type ContributionStatus = "awaiting_signature" | "pending" | "confirmed" | "failed" | "expired";
+
+export interface ContributionProject {
+	id: string;
+	slug: string | null;
+	title: string;
 }
 
 export interface Contribution {
 	id: string;
-	project_id: string;
-	intent_id: string;
-	tx_hash: string;
-	network: StellarNetwork;
-	sender_address: StellarAddress;
-	destination_or_contract: StellarAddress;
-	asset_id: string;
-	amount: Amount;
-	ledger_or_event_ref: string | null;
+	project: ContributionProject;
 	status: ContributionStatus;
-	failure_reason: string | null;
-	created_at: ISODate;
-	confirmed_at: ISODate | null;
+	contributorAddress: StellarAddress;
+	asset: StellarAsset;
+	amount: Amount;
+	destination: StellarAddress;
+	memo: string;
+	/** Network fee in XLM. */
+	fee: Amount;
+	txHash: string;
+	explorerUrl: string;
+	/** Signing deadline (10 minutes after prepare). */
+	expiresAt: ISODate;
+	submittedAt: ISODate | null;
+	confirmedAt: ISODate | null;
+	ledger: number | null;
+	failureReason: string | null;
+	createdAt: ISODate;
 }
 
-/** GET /contributions/:id and the wallet history: a contribution with what the receipt shows. */
-export interface ContributionDetail extends Contribution {
-	reference: string;
-	project: Pick<Project, "id" | "slug" | "title" | "logo_url">;
-	asset: AcceptedAsset;
-	/** Demo-wallet payment (mock mode): no real transaction exists on Stellar. */
-	simulated: boolean;
+export interface PreparedContribution extends Contribution {
+	/** Unsigned transaction XDR for the wallet to sign. */
+	transaction: string;
+	networkPassphrase: string;
+	network: StellarNetwork;
 }
 
-/** GET /contributions?wallet=: the contributor page (PRD §5: contributors are identified by wallet). */
-export interface WalletContributions extends Paginated<ContributionDetail> {
-	summary: {
-		/** Confirmed totals per asset code. */
-		total_sent: Record<string, Amount>;
-		confirmed_count: number;
-		pending_count: number;
-		failed_count: number;
-		projects_supported: number;
-		first_at: ISODate | null;
-		last_at: ISODate | null;
-		/** Confirmed XLM per month, oldest first (last 6 months). */
-		monthly: { month: string; label: string; amount: Amount }[];
-		/** Confirmed totals per project (XLM), largest first. */
-		by_project: { project: Pick<Project, "id" | "slug" | "title" | "logo_url">; amount: Amount; count: number }[];
-	};
+export interface PublicContribution {
+	id: string;
+	/** Shortened address. */
+	contributor: string;
+	asset: StellarAsset;
+	amount: Amount;
+	txHash: string;
+	explorerUrl: string;
+	confirmedAt: ISODate;
 }
 
-// ---------------------------------------------------------------- suggestions + moderation
+export interface AdminContribution extends Contribution {
+	resultCodes: string[] | null;
+	updatedAt: ISODate;
+}
+
+// ---------------------------------------------------------------- suggestions + reports
 
 export type SuggestionType = "product_improvement" | "technical_feedback" | "community_marketing" | "other";
+export type SuggestionStatus = "pending" | "published" | "rejected" | "hidden";
 
-export type SuggestionStatus = "pending_moderation" | "published" | "hidden" | "rejected";
+export interface SuggestionInput {
+	type: SuggestionType;
+	title: string;
+	body: string;
+	link?: string;
+}
 
 export interface Suggestion {
 	id: string;
-	project_id: string;
-	wallet_address: StellarAddress;
+	project: ContributionProject;
 	type: SuggestionType;
 	title: string;
 	body: string;
 	link: string | null;
 	status: SuggestionStatus;
-	report_count: number;
-	created_at: ISODate;
-	moderated_by: string | null;
-	moderated_at: ISODate | null;
-	moderation_reason: string | null;
+	/** The moderator's note, shown to the author when rejected or hidden. */
+	moderationNote: string | null;
+	moderatedAt: ISODate | null;
+	createdAt: ISODate;
+}
+
+export interface PublicSuggestion {
+	id: string;
+	type: SuggestionType;
+	title: string;
+	body: string;
+	link: string | null;
+	/** Shortened wallet address. */
+	author: string;
+	createdAt: ISODate;
+}
+
+export interface AdminSuggestion extends Suggestion {
+	walletAddress: StellarAddress;
+	moderatedBy: string | null;
+	openReportCount: number;
+}
+
+export type ReportReason = "spam" | "abuse" | "misleading" | "scam" | "other";
+export type ReportStatus = "open" | "resolved" | "dismissed";
+
+export interface ReportInput {
+	reason: ReportReason;
+	details?: string;
+}
+
+export interface ReportReceipt {
+	id: string;
+	status: ReportStatus;
 }
 
 export interface Report {
 	id: string;
-	reporter_wallet_or_user: string;
-	entity_type: "project" | "suggestion";
-	entity_id: string;
-	reason: string;
-	status: "open" | "resolved" | "dismissed";
-	created_at: ISODate;
+	entityType: "suggestion" | "project";
+	entityId: string;
+	entityTitle: string | null;
+	reporterAddress: StellarAddress;
+	reason: ReportReason;
+	details: string | null;
+	status: ReportStatus;
+	resolutionNote: string | null;
+	resolvedBy: string | null;
+	resolvedAt: ISODate | null;
+	createdAt: ISODate;
 }
 
-// ---------------------------------------------------------------- notifications + audit
+export interface AdminSuggestionDetail extends AdminSuggestion {
+	reports: Report[];
+}
+
+export type SuggestionAction = "approve" | "reject" | "hide";
+
+export interface WalletRestriction {
+	address: StellarAddress;
+	reason: string;
+	restrictedBy: string;
+	until: ISODate | null;
+	createdAt: ISODate;
+}
+
+// ---------------------------------------------------------------- notifications
 
 export type NotificationType =
-	// builders (FR-NOT-01/02)
-	| "submission_received"
+	| "project_submitted"
+	| "review_requested"
 	| "project_approved"
 	| "project_rejected"
-	| "changes_requested"
-	| "funding_milestone"
-	// contributors (by wallet)
+	| "project_changes_requested"
+	| "project_archived"
+	| "first_contribution"
+	| "funding_target_reached";
+
+export interface AppNotification {
+	id: string;
+	type: NotificationType;
+	title: string;
+	/** Plain text; render as text and keep line breaks. */
+	body: string;
+	projectId: string | null;
+	readAt: ISODate | null;
+	createdAt: ISODate;
+}
+
+// ---------------------------------------------------------------- admin overview + analytics
+
+export interface Backlog {
+	projectsAwaitingReview: number;
+	suggestionsPending: number;
+	reportsOpen: number;
+}
+
+export interface AdminOverview {
+	queue: Backlog;
+	contributions: {
+		stuckPending: number;
+		stuckAfterMinutes: number;
+		confirmed24h: number;
+		failed24h: number;
+		expired24h: number;
+	};
+	recentDecisions: {
+		projectId: string;
+		projectTitle: string;
+		action: ProjectAction;
+		adminName: string | null;
+		createdAt: ISODate;
+	}[];
+}
+
+export type AnalyticsEvent =
+	| "builder_registered"
+	| "project_draft_created"
+	| "project_submitted"
+	| "project_review_decided"
+	| "project_published"
+	| "project_viewed"
+	| "wallet_connected"
+	| "contribution_started"
+	| "contribution_submitted"
 	| "contribution_confirmed"
 	| "contribution_failed"
-	| "suggestion_published"
-	| "suggestion_rejected"
-	// everyone
-	| "project_published";
+	| "suggestion_submitted"
+	| "suggestion_moderated";
 
-export type NotificationCategory = "projects" | "contributions" | "suggestions" | "account";
-
-/**
- * In-app notification. Exactly one audience: a builder (`user_id`), a contributor wallet (`wallet_address`, no
- * account needed), or everyone (`broadcast`). Never carries secrets; tx hashes and addresses are public data, but
- * email notifications must not include them (FR-NOT-03).
- */
-export interface Notification {
-	id: string;
-	user_id: string | null;
-	wallet_address: StellarAddress | null;
-	broadcast: boolean;
-	type: NotificationType;
-	category: NotificationCategory;
-	title: string;
-	/** Optional detail under the title, e.g. the reason an admin gave when rejecting a project. */
-	body?: string | null;
-	/** The call to action shown next to the time ("Contribute", "View receipt"). */
-	action: { label: string; href: string } | null;
-	payload: Record<string, unknown>;
-	/** For the current reader (broadcast read state is per reader). */
-	read_at: ISODate | null;
-	created_at: ISODate;
+/** Rates run 0..1 or are null (show "–"). */
+export interface AnalyticsSummary {
+	from: ISODate;
+	to: ISODate;
+	events: Record<AnalyticsEvent, number>;
+	metrics: {
+		submissionCompletion: { rate: number | null; draftsCreated: number; submitted: number };
+		reviewTurnaround: { decisions: number; medianHours: number | null };
+		approvalToFunding: { rate: number | null; approved: number; funded: number };
+		contributions: {
+			started: number;
+			submitted: number;
+			confirmed: number;
+			failed: number;
+			expired: number;
+			successRate: number | null;
+			failedTransactionRate: number | null;
+		};
+		suggestions: { submitted: number; wallets: number };
+		projectViews: number;
+		backlog: Backlog;
+	};
 }
 
-export interface AuditLog {
-	id: string;
-	actor_user_id: string;
-	action: string;
-	entity_type: string;
-	entity_id: string;
-	before_snapshot: unknown;
-	after_snapshot: unknown;
-	created_at: ISODate;
-}
-
-// ---------------------------------------------------------------- API envelope
-
-/** Same envelope as the reference API: `{ status_code, message, data }`. */
-export interface ApiEnvelope<T> {
-	status_code: number;
-	message: string;
-	data: T;
-}
-
-export interface Paginated<T> {
-	items: T[];
-	meta: { page: number; limit: number; total: number; total_pages: number };
+export interface ProjectInsights {
+	projectId: string;
+	from: ISODate;
+	to: ISODate;
+	views: number;
+	viewsByDay: { date: string; views: number }[];
+	contributionsStarted: number;
+	contributionsConfirmed: number;
+	suggestionsReceived: number;
+	suggestionsPublished: number;
 }

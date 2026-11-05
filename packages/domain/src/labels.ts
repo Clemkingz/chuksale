@@ -1,14 +1,17 @@
 import type {
-	NotificationCategory,
 	ContributionStatus,
+	ProjectAction,
 	ProjectStage,
 	ProjectStatus,
+	ProjectType,
+	ReportReason,
+	ReportStatus,
 	SuggestionStatus,
 	SuggestionType,
 } from "./types";
 
 /**
- * Every user-facing label for a status lives here, so web and admin say the same thing. Colours are mapped
+ * Every user-facing label for a backend enum lives here, so web and admin say the same thing. Colours are mapped
  * to design tokens in each app's StatusBadge (approval status and funding status must look distinct, PRD §13).
  */
 
@@ -22,18 +25,41 @@ export const PROJECT_STATUS_LABEL: Record<ProjectStatus, string> = {
 	archived: "Archived",
 };
 
+export const PROJECT_TYPE_LABEL: Record<ProjectType, string> = {
+	new_idea: "New idea",
+	existing_project: "Existing project",
+};
+
+export const PROJECT_STAGE_LABEL: Record<ProjectStage, string> = {
+	idea: "Idea",
+	prototype: "Prototype",
+	mvp: "MVP",
+	launched: "Launched",
+	scaling: "Scaling",
+};
+
+export const PROJECT_ACTION_LABEL: Record<ProjectAction, string> = {
+	start_review: "Started review",
+	approve: "Approved",
+	reject: "Rejected",
+	request_changes: "Requested changes",
+	publish: "Published",
+	unpublish: "Unpublished",
+	archive: "Archived",
+	feature: "Featured",
+	unfeature: "Unfeatured",
+};
+
 export const CONTRIBUTION_STATUS_LABEL: Record<ContributionStatus, string> = {
-	created: "Started",
-	awaiting_wallet: "Waiting for wallet",
-	pending: "Pending confirmation",
+	awaiting_signature: "Waiting for wallet",
+	pending: "Confirming on Stellar",
 	confirmed: "Confirmed",
 	failed: "Failed",
 	expired: "Expired",
-	cancelled: "Cancelled",
 };
 
 export const SUGGESTION_STATUS_LABEL: Record<SuggestionStatus, string> = {
-	pending_moderation: "Pending moderation",
+	pending: "Pending moderation",
 	published: "Published",
 	hidden: "Hidden",
 	rejected: "Rejected",
@@ -46,17 +72,16 @@ export const SUGGESTION_TYPE_LABEL: Record<SuggestionType, string> = {
 	other: "Other",
 };
 
-export const PROJECT_STAGE_LABEL: Record<ProjectStage, string> = {
-	idea: "Idea",
-	prototype: "Prototype",
-	mvp: "MVP",
-	live: "Live",
-	scaling: "Scaling",
+export const REPORT_REASON_LABEL: Record<ReportReason, string> = {
+	spam: "Spam",
+	abuse: "Abuse or harassment",
+	misleading: "Misleading",
+	scam: "Scam or fraud",
+	other: "Something else",
 };
 
-export const NOTIFICATION_CATEGORY_LABEL: Record<NotificationCategory, string> = {
-	projects: "Projects",
-	contributions: "Contributions",
-	suggestions: "Suggestions",
-	account: "Account",
+export const REPORT_STATUS_LABEL: Record<ReportStatus, string> = {
+	open: "Open",
+	resolved: "Resolved",
+	dismissed: "Dismissed",
 };

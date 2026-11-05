@@ -8,6 +8,7 @@ import { cn } from "@repo/ui/lib/utils";
 import { errorMessage } from "@/lib/api/errors";
 import { routes } from "@/lib/routes";
 import { timeAgo } from "@/lib/time";
+import { NOTIFICATION_META, isDecision, notificationHref } from "@/features/notifications/meta";
 import { useMarkAllRead, useMarkRead, useNotifications, useUnreadCount } from "@/features/notifications/hooks";
 
 /**
@@ -17,10 +18,10 @@ import { useMarkAllRead, useMarkRead, useNotifications, useUnreadCount } from "@
 export function NotificationPanel() {
 	const [open, setOpen] = useState(false);
 	const { data: count = 0 } = useUnreadCount();
-	const list = useNotifications("all");
+	const list = useNotifications("all", 6);
 	const markRead = useMarkRead();
 	const markAll = useMarkAllRead();
-	const items = list.data?.pages[0]?.items.slice(0, 6) ?? [];
+	const items = list.data?.pages[0]?.result ?? [];
 
 	return (
 		<Popover open={open} onOpenChange={setOpen}>
@@ -69,43 +70,45 @@ export function NotificationPanel() {
 					) : (
 						<ul className="divide-y divide-white/5">
 							{items.map((n) => {
-								const bad = n.type === "project_rejected" || n.type === "contribution_failed" || n.type === "suggestion_rejected";
+								const bad = NOTIFICATION_META[n.type]?.tone === "bad";
+								const href = notificationHref(n);
 								const content = (
 									<>
 										<span
-											className={cn("mt-1.5 size-2 shrink-0 rounded-full", n.read_at ? "bg-transparent" : "bg-primary-500")}
+											className={cn("mt-1.5 size-2 shrink-0 rounded-full", n.readAt ? "bg-transparent" : "bg-primary-500")}
 											aria-hidden
 										/>
 										<span className="min-w-0 flex-1">
-											<span className={cn("block text-sm leading-snug", n.read_at ? "text-white/75" : "font-medium text-white")}>
+											<span className={cn("block text-sm leading-snug", n.readAt ? "text-white/75" : "font-medium text-white")}>
 												{n.title}
 											</span>
 											{n.body && (
 												<span
 													className={cn(
-														"mt-1.5 line-clamp-3 block rounded-md border-l-2 px-2.5 py-1.5 text-[13px] leading-5 break-words text-white/80",
-														bad ? "border-error-300 bg-error-400/[0.08]" : "border-warning-300 bg-warning-400/[0.07]",
+														"mt-1.5 line-clamp-3 block text-[13px] leading-5 break-words whitespace-pre-line text-white/80",
+														isDecision(n) && "rounded-md border-l-2 px-2.5 py-1.5",
+														isDecision(n) && (bad ? "border-error-300 bg-error-400/[0.08]" : "border-warning-300 bg-warning-400/[0.07]"),
 													)}
 												>
-													<span className="sr-only">Reason: </span>“{n.body}”
+													{n.body}
 												</span>
 											)}
 											<span className="mt-1.5 block text-xs text-white/45">
-												{n.action ? `${n.action.label} · ` : ""}
-												{timeAgo(n.created_at)}
+												{href ? `${NOTIFICATION_META[n.type]?.action ?? "Open"} · ` : ""}
+												{timeAgo(n.createdAt)}
 											</span>
 										</span>
 									</>
 								);
 								const onOpen = () => {
-									if (!n.read_at) markRead.mutate(n.id);
+									if (!n.readAt) markRead.mutate(n.id);
 									setOpen(false);
 								};
 								return (
 									<li key={n.id}>
-										{n.action ? (
+										{href ? (
 											<Link
-												href={n.action.href}
+												href={href}
 												onClick={onOpen}
 												className="flex gap-3 px-4 py-3 transition-colors hover:bg-white/[0.04]"
 											>

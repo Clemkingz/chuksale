@@ -9,7 +9,7 @@ import { errorMessage } from "@/lib/api/errors";
 import { routes } from "@/lib/routes";
 import { withBasePath } from "@/lib/site";
 import { ErrorState } from "@/components/States";
-import { useCategories, useFeaturedProjects, usePublicStats } from "@/features/projects/hooks";
+import { useCategories, useFeaturedProjects, useProjectCount } from "@/features/projects/hooks";
 import { ProjectCard, ProjectCardSkeleton } from "@/features/projects/components/ProjectCard";
 
 /**
@@ -20,7 +20,8 @@ import { ProjectCard, ProjectCardSkeleton } from "@/features/projects/components
 const d = (i: number) => ({ "--d": i }) as CSSProperties;
 
 export function HomeView() {
-	const stats = usePublicStats();
+	const live = useProjectCount();
+	const raising = useProjectCount({ fundraising: true });
 	const featured = useFeaturedProjects();
 	const categories = useCategories();
 
@@ -57,9 +58,9 @@ export function HomeView() {
 
 					<dl className="mt-12 grid max-w-[720px] grid-cols-3 gap-3 md:mt-16">
 						{[
-							{ label: "Live projects", value: stats.data?.projects },
-							{ label: "Contributors", value: stats.data?.contributors },
-							{ label: "Contributions", value: stats.data?.contributions },
+							{ label: "Live projects", value: live.data },
+							{ label: "Raising funds", value: raising.data },
+							{ label: "Causes", value: categories.data?.filter((c) => c.publishedProjectCount > 0).length },
 						].map((s, i) => (
 							<div
 								key={s.label}
@@ -105,7 +106,7 @@ export function HomeView() {
 				) : (
 					<ul className="mt-7 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
 						{featured.data
-							? featured.data.map((p, i) => <ProjectCard key={p.id} project={p} index={i} />)
+							? featured.data.result.map((p, i) => <ProjectCard key={p.id} project={p} index={i} />)
 							: Array.from({ length: 3 }, (_, i) => <ProjectCardSkeleton key={i} />)}
 					</ul>
 				)}
@@ -126,7 +127,12 @@ export function HomeView() {
 									href={`${routes.projects}?category=${c.slug}`}
 									className="group flex h-24 items-end justify-between rounded-2xl border border-white/10 bg-gradient-to-br from-primary-500/15 to-transparent px-5 py-4 transition-[border-color,background-color] hover:border-primary-500/50 md:h-28"
 								>
-									<span className="font-display text-lg font-bold">{c.name}</span>
+									<span className="min-w-0">
+										<span className="block font-display text-lg font-bold">{c.name}</span>
+										<span className="text-xs text-white/55">
+											{c.publishedProjectCount} project{c.publishedProjectCount === 1 ? "" : "s"}
+										</span>
+									</span>
 									<ArrowRight className="size-5 text-primary-300 transition-transform group-hover:translate-x-1" aria-hidden />
 								</Link>
 							</li>

@@ -10,7 +10,8 @@ import { routes } from "@/lib/routes";
 import { LANDING_URL } from "@/lib/site";
 import { notify } from "@/lib/use-toast";
 import { Logo } from "@/components/Logo";
-import { useBuilderSession } from "@/features/builder-auth/session";
+import { useSignOut } from "@/features/builder-auth/hooks";
+import { useSignedIn } from "@/features/builder-auth/session";
 import { NotificationBell } from "@/features/notifications/components/NotificationBell";
 import { WalletButton } from "@/features/wallet/components/WalletButton";
 import { useConnectedWallet } from "@/features/wallet/hooks";
@@ -25,7 +26,8 @@ const NAV = [
 export function SiteHeader() {
 	const pathname = usePathname();
 	const [open, setOpen] = useState(false);
-	const { token, signOut } = useBuilderSession();
+	const token = useSignedIn();
+	const signOut = useSignOut();
 	const wallet = useConnectedWallet().address;
 
 	const link = (item: (typeof NAV)[number], mobile = false) => {
@@ -82,7 +84,7 @@ export function SiteHeader() {
 				</div>
 
 				<div className="flex items-center gap-3 md:gap-4">
-					<NotificationBell />
+					{token && <NotificationBell />}
 					<WalletButton className="hidden md:inline-flex" />
 
 					<Sheet open={open} onOpenChange={setOpen}>
@@ -127,7 +129,7 @@ export function SiteHeader() {
 										<button
 											type="button"
 											onClick={() => {
-												signOut();
+												signOut.mutate();
 												setOpen(false);
 												notify.info("Signed out");
 											}}

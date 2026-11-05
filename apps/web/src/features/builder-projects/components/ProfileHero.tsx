@@ -1,18 +1,15 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
-import { Check, Copy, PenLine } from "lucide-react";
+import { Globe, PenLine } from "lucide-react";
 import { routes } from "@/lib/routes";
 import { withBasePath } from "@/lib/site";
-import { shortKey } from "@/lib/stellar/config";
-import { notify } from "@/lib/use-toast";
 import { errorMessage } from "@/lib/api/errors";
-import { useBuilderProfile } from "@/features/builder-projects/hooks";
+import { useMe } from "@/features/builder-auth/hooks";
 
 /**
- * Design "Dev add project 1/3": full-width banner, round avatar overlapping its bottom edge, name, then the
- * builder's wallet (short, copyable) and "Joined April 15th".
+ * Design "Dev add project 1/3": full-width banner, round initials avatar overlapping its bottom edge, name, then
+ * organisation, website and "Joined April 15th" (from `GET /auth/me`).
  */
 
 function joined(iso: string) {
@@ -33,8 +30,15 @@ const initials = (name: string) =>
 		.join("");
 
 export function ProfileHero() {
-	const profile = useBuilderProfile();
-	const p = profile.data;
+	const profile = useMe();
+	const me = profile.data;
+	const p = me && {
+		name: me.profile?.displayName || me.name,
+		organization: me.profile?.organizationName ?? null,
+		website: me.profile?.websiteUrl ?? null,
+		bio: me.profile?.bio ?? null,
+		joinedAt: me.createdAt,
+	};
 
 	return (
 		<section aria-label="Your profile">
@@ -55,12 +59,9 @@ export function ProfileHero() {
 				<div className="-mt-10 flex flex-col items-start sm:-mt-12 md:-mt-[52px]">
 					<div className="flex w-full items-end justify-between gap-4">
 						<span className="animate-pop relative size-20 overflow-hidden rounded-full bg-surface-600 ring-4 ring-surface-900 sm:size-24 md:size-[104px]">
-							{p?.avatar_url ? (
-								// eslint-disable-next-line @next/next/no-img-element
-								<img src={p.avatar_url} alt="" className="size-full object-cover" />
-							) : p ? (
+							{p ? (
 								<span className="flex size-full items-center justify-center bg-gradient-to-br from-primary-400 to-primary-700 font-display text-2xl font-bold text-white md:text-3xl">
-									{initials(p.display_name)}
+									{initials(p.name)}
 								</span>
 							) : (
 								<span className="skeleton-shimmer block size-full" />
@@ -79,18 +80,24 @@ export function ProfileHero() {
 					{p ? (
 						<>
 							<h1 className="animate-rise mt-2 font-display text-[26px] leading-tight font-bold [--i:1] md:text-[32px]">
-								{p.display_name}
+								{p.name}
 							</h1>
 							<div className="animate-rise mt-2 flex flex-wrap items-center gap-x-7 gap-y-1 text-[15px] text-white/90 [--i:2] md:ml-2.5 md:text-base">
-								{p.wallet_address ? (
-									<CopyAddress address={p.wallet_address} />
-								) : (
-									<span className="text-white/50">No wallet linked yet</span>
+								{p.organization && <span>{p.organization}</span>}
+								{p.website && (
+									<a
+										href={p.website}
+										target="_blank"
+										rel="noopener noreferrer"
+										className="inline-flex items-center gap-1.5 hover:text-primary-300"
+									>
+										<Globe className="size-4" aria-hidden /> {p.website.replace(/^https:\/\//, "").replace(/\/$/, "")}
+									</a>
 								)}
-								<span>{joined(p.joined_at)}</span>
+								<span>{joined(p.joinedAt)}</span>
 							</div>
 							{p.bio && (
-								<p className="animate-rise mt-3 max-w-[620px] text-[15px] leading-6 text-white/70 [--i:3] md:ml-2.5">{p.bio}</p>
+								<p className="animate-rise mt-3 max-w-[620px] text-[15px] leading-6 whitespace-pre-line text-white/70 [--i:3] md:ml-2.5">{p.bio}</p>
 							)}
 						</>
 					) : profile.isError ? (
@@ -104,34 +111,5 @@ export function ProfileHero() {
 				</div>
 			</div>
 		</section>
-	);
-}
-
-function CopyAddress({ address }: { address: string }) {
-	const [copied, setCopied] = useState(false);
-	return (
-		<button
-			type="button"
-			title={address}
-			aria-label={`Copy wallet address ${address}`}
-			onClick={async () => {
-				try {
-					await navigator.clipboard.writeText(address);
-					setCopied(true);
-					notify.success("Address copied");
-					setTimeout(() => setCopied(false), 1600);
-				} catch {
-					notify.error("Couldn’t copy", "Select the address and copy it manually.");
-				}
-			}}
-			className="group inline-flex items-center gap-2 rounded-md transition-colors hover:text-white"
-		>
-			<span className="font-mono text-[0.95em] tracking-tight">{shortKey(address, 6, 4)}</span>
-			{copied ? (
-				<Check className="animate-pop size-4 text-success-200" aria-hidden />
-			) : (
-				<Copy className="size-3.5 text-white/50 transition-colors group-hover:text-primary-300" aria-hidden />
-			)}
-		</button>
 	);
 }

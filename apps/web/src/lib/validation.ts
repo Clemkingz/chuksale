@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-/** Field rules shared by builder forms (Add Project, Edit Profile). The mock API repeats each rule. */
+/** Field rules shared by builder forms, matching the backend's (https-only links, G… addresses). */
 
 const STELLAR_PUBLIC_KEY = /^G[A-Z2-7]{55}$/;
 const STELLAR_SECRET_KEY = /^S[A-Z2-7]{55}$/;
@@ -17,27 +17,20 @@ export const stellarAddress = (required: string | false) =>
 			(v) => !STELLAR_SECRET_KEY.test(v.toUpperCase()),
 			"That’s a secret key. Never share it. Enter your public address (starts with G).",
 		)
-		.refine((v) => !v || STELLAR_PUBLIC_KEY.test(v.toUpperCase()), "Enter a Stellar address: 56 characters starting with G.");
+		.refine((v) => !v || STELLAR_PUBLIC_KEY.test(v), "Enter a Stellar address: 56 characters starting with G.");
 
-/** Optional link; when given it must be a full URL, and on one of `hosts` if listed. */
-export const optionalLink = (label: string, hosts?: string[]) =>
+export const isHttpsUrl = (v: string) => {
+	try {
+		const u = new URL(v);
+		return u.protocol === "https:" && u.hostname.includes(".");
+	} catch {
+		return false;
+	}
+};
+
+/** Optional link; when given it must be a full https:// URL (the API refuses anything else). */
+export const optionalLink = (label: string) =>
 	z
 		.string()
 		.trim()
-		.refine((v) => !v || /^https?:\/\/\S+\.\S+/i.test(v), `Enter a full ${label} link, starting with https://`)
-		.refine((v) => {
-			if (!v || !hosts) return true;
-			try {
-				const host = new URL(v).hostname.replace(/^www\./, "");
-				return hosts.some((h) => host === h || host.endsWith(`.${h}`));
-			} catch {
-				return false;
-			}
-		}, `That doesn’t look like a ${label} link.`);
-
-export const socialLinks = {
-	twitter: optionalLink("Twitter / X", ["twitter.com", "x.com"]),
-	discord: optionalLink("Discord", ["discord.gg", "discord.com"]),
-	telegram: optionalLink("Telegram", ["t.me", "telegram.me", "telegram.org"]),
-	website: optionalLink("website"),
-};
+		.refine((v) => !v || isHttpsUrl(v), `Enter a full ${label} link, starting with https://`);
