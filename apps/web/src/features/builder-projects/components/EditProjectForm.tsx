@@ -317,7 +317,8 @@ function Form({ project: p }: { project: Project }) {
 							))}
 						</Select>
 					</div>
-					<div className="grid gap-6 sm:grid-cols-[auto_minmax(0,1fr)]">
+					{/* Stacked at every width: side by side, the logo's help text squeezed the cover into a sliver. */}
+					<div className="flex min-w-0 flex-col gap-6">
 						<LogoUpload projectId={p.id} url={p.logoUrl} />
 						<CoverUpload projectId={p.id} url={p.coverImageUrl} />
 					</div>
