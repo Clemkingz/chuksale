@@ -207,6 +207,9 @@ type PasswordValues = z.infer<typeof passwordSchema>;
 
 /** Change password (other sessions end; this one stays) and sign out everywhere. */
 function Security() {
+	// react-hook-form + React Compiler: memoized register() props stop tracking fields after form.reset(). Opt out.
+	"use no memo";
+
 	const router = useRouter();
 	const change = useChangePassword();
 	const everywhere = useSignOutEverywhere();

@@ -1,625 +1,264 @@
-import type { AuditLog, Project, ProjectReview, Suggestion } from "./model";
-import type { MockContribution, MockDb, MockNotification } from "./db";
-import { DAY, hex, iso, random, stellarAddress, uuid } from "./util";
+import type { ProjectStage, ProjectStatus, ProjectType, SuggestionStatus, SuggestionType } from "@repo/domain/types";
+import type { CategoryRec, ContributionRec, MockDb, ProjectRec, ReviewRec, SuggestionRec, UserRec } from "./records";
+import { DAY, USDC_ISSUER, hex, iso, random, stellarAddress, uuid } from "./util";
 
 /**
- * Demo data. Dates are relative to the first run. Phase 2/3 grow the project list to cover every status.
- * Seeded projects that should accept real Testnet contributions use NEXT_PUBLIC_DEMO_DESTINATION (a funded
- * Testnet account) as their destination; otherwise a display-only address.
+ * Demo data for mock mode, in the live API's shapes. Deterministic (seeded PRNG), relative to "now" so dates
+ * always look recent. Demo accounts: builder@demo.local / Password1 and admin@demo.local / Password1.
  */
 
 export const DEMO_BUILDER_EMAIL = "builder@demo.local";
 export const DEMO_ADMIN_EMAIL = "admin@demo.local";
-export const DEMO_PASSWORD = "Password1";
-export const DEMO_ADMIN_MFA = "123456";
+const XLM = "XLM";
+const USDC = `USDC:${USDC_ISSUER}`;
 
-type Seedable = Pick<Project, "title" | "slug" | "summary" | "category_id" | "stage" | "project_type" | "status"> &
-	Partial<Project> & {
-		daysAgo: number;
-		/** Days until the fundraising window closes (negative = already ended). Approved + fundraising only. */
-		endsInDays?: number;
-		/** Confirmed demo contributions (XLM). */
-		raised?: string[];
-		/** Index into OTHER_BUILDERS; omitted = the demo builder. */
-		owner?: number;
-	};
-
-/** Extra builders, so the admin console has more than one owner to show. They can't sign in (no password shared). */
-const OTHER_BUILDERS = [
-	{ name: "Edith Samson", email: "edith@demo.local", org: "Lagos Makers" },
-	{ name: "Kofi Mensah", email: "kofi@demo.local", org: null },
+const CATEGORIES: [string, string][] = [
+	["Payments & Remittances", "payments-remittances"],
+	["Financial Inclusion", "financial-inclusion"],
+	["Education", "education"],
+	["Developer Tools", "developer-tools"],
+	["Social Impact", "social-impact"],
+	["Marketplaces & Commerce", "marketplaces-commerce"],
+	["Infrastructure", "infrastructure"],
+	["Other", "other"],
 ];
 
-const SEED_PROJECTS: Seedable[] = [
-	{
-		title: "Solar Schools Initiative",
-		slug: "solar-schools-initiative",
-		summary: "Solar kits for rural classrooms so lessons continue after dark.",
-		category_id: "cat-education",
-		stage: "live",
-		project_type: "existing_project",
-		status: "approved",
-		target_amount: "5000.0000000",
-		featured: true,
-		daysAgo: 25,
-		endsInDays: 18,
-		raised: ["1500", "750", "300", "180"],
-	},
-	{
-		title: "Open Water Map",
-		slug: "open-water-map",
-		summary: "A community-maintained map of safe drinking water points.",
-		category_id: "cat-public-goods",
-		stage: "mvp",
-		project_type: "existing_project",
-		status: "approved",
-		target_amount: "2500.0000000",
-		daysAgo: 12,
-		endsInDays: 6.3,
-		raised: ["400", "240"],
-	},
-	{
-		title: "Code Club Lagos",
-		slug: "code-club-lagos",
-		summary: "Free weekend coding classes for teenagers, run by local volunteers.",
-		category_id: "cat-education",
-		stage: "prototype",
-		project_type: "new_idea",
-		status: "approved",
-		target_amount: "1200.0000000",
-		daysAgo: 4,
-		endsInDays: -1,
-		raised: ["800", "450"],
-	},
-	{
-		title: "Mangrove Restoration Fund",
-		slug: "mangrove-restoration-fund",
-		summary: "Replanting coastal mangroves with fishing communities.",
-		category_id: "cat-climate",
-		stage: "idea",
-		project_type: "new_idea",
-		status: "under_review",
-		daysAgo: 2,
-	},
-	{
-		title: "Neighbourhood Tool Library",
-		slug: "neighbourhood-tool-library",
-		summary: "Borrow tools instead of buying them: a shared shed for the block.",
-		category_id: "cat-community",
-		stage: "idea",
-		project_type: "new_idea",
-		status: "changes_requested",
-		daysAgo: 6,
-	},
-	{
-		title: "Rainwater for Clinics",
-		slug: "rainwater-for-clinics",
-		summary: "Rainwater harvesting tanks for three rural health clinics.",
-		category_id: "cat-climate",
-		stage: "mvp",
-		project_type: "existing_project",
-		status: "approved",
-		target_amount: "3000.0000000",
-		daysAgo: 20,
-		endsInDays: 0.073, // ≈ 1 h 45 m: shows the countdown ticking
-		raised: ["1200", "650", "90"],
-	},
-	{
-		title: "Community Radio Ibadan",
-		slug: "community-radio-ibadan",
-		summary: "A volunteer-run FM station for local news, health and farming tips.",
-		category_id: "cat-community",
-		stage: "prototype",
-		project_type: "existing_project",
-		status: "submitted",
-		target_amount: "2000.0000000",
-		daysAgo: 1,
-	},
-	{
-		title: "Plastic-Free Markets",
-		slug: "plastic-free-markets",
-		summary: "Reusable bag stations for open-air markets.",
-		category_id: "cat-climate",
-		stage: "idea",
-		project_type: "new_idea",
-		status: "rejected",
-		daysAgo: 15,
-	},
-	{
-		title: "Girls in Robotics",
-		slug: "girls-in-robotics",
-		summary: "After-school robotics kits and mentors for girls aged 12–16.",
-		category_id: "cat-education",
-		stage: "idea",
-		project_type: "new_idea",
-		status: "draft",
-		daysAgo: 0,
-	},
-	{
-		title: "Clinic Queue SMS",
-		slug: "clinic-queue-sms",
-		summary: "Text-message queue numbers so patients can wait at home.",
-		category_id: "cat-public-goods",
-		stage: "live",
-		project_type: "existing_project",
-		status: "approved",
-		target_amount: "4000.0000000",
-		daysAgo: 40,
-		endsInDays: 9,
-		raised: ["900", "620", "410", "380"],
-		owner: 0,
-	},
-	{
-		title: "Makers Library Kano",
-		slug: "makers-library-kano",
-		summary: "A shared 3D printer and electronics bench for students.",
-		category_id: "cat-education",
-		stage: "mvp",
-		project_type: "existing_project",
-		status: "approved",
-		target_amount: "2200.0000000",
-		daysAgo: 30,
-		endsInDays: 21,
-		raised: ["300", "260"],
-		owner: 1,
-	},
-	{
-		title: "Riverbank Cleanups",
-		slug: "riverbank-cleanups",
-		summary: "Monthly cleanups with gear, transport and recycling partners.",
-		category_id: "cat-climate",
-		stage: "idea",
-		project_type: "new_idea",
-		status: "submitted",
-		target_amount: "1500.0000000",
-		daysAgo: 0.2,
-		owner: 0,
-	},
-	{
-		title: "Open Bus Times",
-		slug: "open-bus-times",
-		summary: "Crowd-sourced arrival times for city minibuses.",
-		category_id: "cat-public-goods",
-		stage: "prototype",
-		project_type: "new_idea",
-		status: "under_review",
-		target_amount: "3500.0000000",
-		daysAgo: 1.5,
-		owner: 1,
-	},
-	{
-		title: "Token Launchpad",
-		slug: "token-launchpad",
-		summary: "A presale platform for new tokens.",
-		category_id: "cat-community",
-		stage: "idea",
-		project_type: "new_idea",
-		status: "rejected",
-		daysAgo: 9,
-		owner: 1,
-	},
+type Seed = {
+	title: string;
+	summary: string;
+	cat: string;
+	stage: ProjectStage;
+	type: ProjectType;
+	status: ProjectStatus;
+	owner: "demo" | 0 | 1;
+	daysAgo: number;
+	featured?: boolean;
+	target?: [string, "XLM" | "USDC"];
+	accepts?: ("XLM" | "USDC")[];
+	reason?: string;
+};
+
+const PROJECTS: Seed[] = [
+	{ title: "Solar Schools Initiative", summary: "Solar kits for rural classrooms so lessons continue after dark.", cat: "social-impact", stage: "launched", type: "existing_project", status: "approved", owner: "demo", daysAgo: 40, featured: true, target: ["5000", "XLM"], accepts: ["XLM", "USDC"] },
+	{ title: "Open Water Map", summary: "A community-maintained map of safe drinking water points.", cat: "social-impact", stage: "mvp", type: "existing_project", status: "approved", owner: 0, daysAgo: 33, featured: true, target: ["2500", "XLM"], accepts: ["XLM"] },
+	{ title: "Code Club Lagos", summary: "Free weekend coding classes for teenagers, run by local volunteers.", cat: "education", stage: "launched", type: "existing_project", status: "approved", owner: 1, daysAgo: 28, target: ["1200", "USDC"], accepts: ["USDC", "XLM"] },
+	{ title: "Market Pay", summary: "Instant USDC payments for market traders, settled on Stellar in seconds.", cat: "payments-remittances", stage: "prototype", type: "new_idea", status: "approved", owner: 0, daysAgo: 20, featured: true, target: ["3000", "USDC"], accepts: ["USDC"] },
+	{ title: "Clinic Queue SMS", summary: "Text-message queue numbers so patients can wait at home instead of the clinic.", cat: "infrastructure", stage: "mvp", type: "existing_project", status: "approved", owner: 1, daysAgo: 14, target: ["1500", "XLM"], accepts: ["XLM"] },
+	{ title: "Stellar Docs in Yoruba", summary: "Translating the core Stellar developer docs into Yoruba for new builders.", cat: "developer-tools", stage: "idea", type: "new_idea", status: "approved", owner: 0, daysAgo: 9 },
+	{ title: "Mangrove Restoration Fund", summary: "Replanting coastal mangroves together with local fishing communities.", cat: "social-impact", stage: "prototype", type: "new_idea", status: "under_review", owner: "demo", daysAgo: 4, target: ["4000", "XLM"], accepts: ["XLM"] },
+	{ title: "Community Radio Ibadan", summary: "A volunteer-run FM station for local news, health and farming tips.", cat: "other", stage: "launched", type: "existing_project", status: "submitted", owner: 1, daysAgo: 2, target: ["2000", "XLM"], accepts: ["XLM"] },
+	{ title: "Riverbank Cleanups", summary: "Monthly cleanups with gear, transport and recycling partners along the river.", cat: "social-impact", stage: "launched", type: "existing_project", status: "submitted", owner: 0, daysAgo: 1 },
+	{ title: "Neighbourhood Tool Library", summary: "Borrow tools instead of buying them: a shared shed for the whole block.", cat: "marketplaces-commerce", stage: "idea", type: "new_idea", status: "changes_requested", owner: "demo", daysAgo: 6, reason: "Please add who is on the team and how tools are tracked and returned. A short plan for the first three months would help too." },
+	{ title: "Plastic-Free Markets", summary: "Reusable bag stations for open-air markets, funded by the stall holders.", cat: "social-impact", stage: "idea", type: "new_idea", status: "rejected", owner: "demo", daysAgo: 12, reason: "The description is too vague to review, and we couldn’t verify the partner markets. You’re welcome to submit a new project with more detail." },
+	{ title: "Token Launchpad", summary: "A presale platform where anyone can launch a new token.", cat: "financial-inclusion", stage: "idea", type: "new_idea", status: "rejected", owner: 1, daysAgo: 18, reason: "Token sales, presales or profit promises aren’t allowed on Chucksales." },
+	{ title: "Girls in Robotics", summary: "After-school robotics kits and mentors for girls aged 12–16.", cat: "education", stage: "idea", type: "new_idea", status: "draft", owner: "demo", daysAgo: 1 },
 ];
+
+const STORY = {
+	problem: (t: string) =>
+		`Without ${t.toLowerCase()}, the people it serves rely on slow, expensive or missing alternatives. That costs time and money every week, and the gap is widest for those with the least.`,
+	solution: (t: string) =>
+		`${t} closes that gap with a simple, local approach the community runs itself. Funds go straight to the team’s Stellar wallet, and progress is shared openly with supporters.`,
+	beneficiaries: "Families, students and small businesses in the neighbourhoods we work in, starting with about 400 people.",
+};
+
+const slugify = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
 export function buildSeed(version: number): MockDb {
-	const rand = random(42);
-	const now = Date.now();
-	const at = (daysAgo: number) => iso(now - daysAgo * DAY);
-	const builderId = uuid(rand);
-	const adminId = uuid(rand);
-	const otherIds = OTHER_BUILDERS.map(() => uuid(rand));
-	const destination = process.env.NEXT_PUBLIC_DEMO_DESTINATION || stellarAddress(rand);
-	// A pool of contributor wallets, so some people back several projects (admin "Trending" shows them).
-	const wallets = Array.from({ length: 24 }, () => stellarAddress(rand));
-	const pick = <T>(list: T[]) => list[Math.floor(rand() * list.length)]!;
+	const rand = random(20261105);
+	const t0 = Date.now();
+	const ago = (days: number, hours = 0) => iso(t0 - days * DAY - hours * 3_600_000);
 
-	const contributions: MockContribution[] = [];
-	const contribute = (projectId: string, amount: string, daysAgo: number) => {
-		const when = at(daysAgo);
+	const user = (email: string, name: string, role: "builder" | "admin", org: string | null, days: number): UserRec => ({
+		id: uuid(rand),
+		email,
+		name,
+		role,
+		password: "Password1",
+		emailVerified: true,
+		suspension: null,
+		profile:
+			role === "builder"
+				? { displayName: name, organizationName: org, bio: org ? `Building with ${org} since 2024.` : null, websiteUrl: null, contactEmail: null }
+				: null,
+		createdAt: ago(days),
+	});
+	const demo = user(DEMO_BUILDER_EMAIL, "Ada Builder", "builder", "Lagos Stellar Builders", 60);
+	demo.profile!.bio = "Community organiser and builder. I start small projects that make daily life a little easier in Lagos.";
+	demo.profile!.websiteUrl = "https://example.org";
+	const others = [user("edith@demo.local", "Edith Samson", "builder", "Lagos Makers", 55), user("kofi@demo.local", "Kofi Mensah", "builder", null, 50)];
+	const admin = user(DEMO_ADMIN_EMAIL, "Demo Admin", "admin", null, 90);
+	const admin2 = user("moderator@demo.local", "Tolu Moderator", "admin", null, 80);
+	const users = [demo, ...others, admin, admin2];
+
+	const categories: CategoryRec[] = CATEGORIES.map(([name, slug], i) => ({ id: uuid(rand), name, slug, isActive: true, sortOrder: i + 1 }));
+	const catId = (slug: string) => categories.find((c) => c.slug === slug)!.id;
+
+	const projects: ProjectRec[] = [];
+	const reviews: ReviewRec[] = [];
+	const revisions: MockDb["revisions"] = [];
+	const notifications: MockDb["notifications"] = [];
+	const audit: MockDb["audit"] = [];
+	let reviewId = 0;
+
+	for (const s of PROJECTS) {
+		const owner = s.owner === "demo" ? demo : others[s.owner]!;
+		const submitted = s.status !== "draft";
+		const decided = ["approved", "rejected", "changes_requested"].includes(s.status);
+		const fundraising = !!s.target;
+		const p: ProjectRec = {
+			id: uuid(rand),
+			ownerId: owner.id,
+			type: s.type,
+			status: s.status,
+			title: s.title,
+			slug: s.status === "approved" ? slugify(s.title) : null,
+			summary: s.summary,
+			problem: s.status === "draft" ? null : STORY.problem(s.title),
+			solution: s.status === "draft" ? null : STORY.solution(s.title),
+			categoryId: catId(s.cat),
+			stage: s.stage,
+			beneficiaries: s.status === "draft" ? null : STORY.beneficiaries,
+			teamMembers: s.status === "draft" ? [] : [{ name: owner.name, role: "Founder" }, { name: "Chidi Okafor", role: "Operations" }],
+			links: s.status === "draft" ? [] : [{ label: "Website", url: `https://${slugify(s.title)}.example.org` }],
+			coverImageUrl: null,
+			fundraisingEnabled: fundraising,
+			targetAmount: s.target?.[0] ?? null,
+			targetAssetId: s.target ? (s.target[1] === "XLM" ? XLM : USDC) : null,
+			acceptedAssetIds: (s.accepts ?? []).map((a) => (a === "XLM" ? XLM : USDC)),
+			payoutAddress: fundraising ? stellarAddress(rand) : null,
+			published: s.status === "approved",
+			featured: !!s.featured,
+			revision: submitted ? 1 : 0,
+			submittedAt: submitted ? ago(s.daysAgo + 2) : null,
+			decidedAt: decided ? ago(s.daysAgo) : null,
+			publishedAt: s.status === "approved" ? ago(s.daysAgo) : null,
+			createdAt: ago(s.daysAgo + 4),
+			updatedAt: ago(s.daysAgo),
+		};
+		projects.push(p);
+		if (submitted) {
+			const { id: _i, ownerId: _o, ...snapshot } = p;
+			revisions.push({ projectId: p.id, revision: 1, submittedBy: owner.id, submittedAt: p.submittedAt!, snapshot });
+		}
+		const review = (action: ReviewRec["action"], from: ProjectStatus, to: ProjectStatus, reason: string | null, at: string, note: string | null = null) => {
+			reviews.push({ id: ++reviewId, projectId: p.id, action, fromStatus: from, toStatus: to, reason, internalNote: note, adminId: admin.id, revision: p.revision, at });
+			audit.unshift({ id: 0, at, actorId: admin.id, action: `project.${action}`, resourceType: "project", resourceId: p.id, requestId: uuid(rand), traceId: null, ip: "127.0.0.1", metadata: reason ? { reason } : {}, before: { status: from }, after: { status: to } });
+		};
+		if (s.status === "under_review") review("start_review", "submitted", "under_review", null, ago(s.daysAgo, -2));
+		if (decided) {
+			review("start_review", "submitted", "under_review", null, ago(s.daysAgo + 1));
+			if (s.status === "approved") review("approve", "under_review", "approved", null, ago(s.daysAgo));
+			if (s.status === "rejected") review("reject", "under_review", "rejected", s.reason!, ago(s.daysAgo), "Checked the partner list: none of the markets could be reached.");
+			if (s.status === "changes_requested") review("request_changes", "under_review", "changes_requested", s.reason!, ago(s.daysAgo), "Looks promising. Repo is active.");
+		}
+		if (owner === demo) {
+			if (s.status === "approved") notifications.push({ id: uuid(rand), userId: demo.id, type: "project_approved", title: `${p.title} was approved and is now live`, body: "Congratulations! Your project is live and can receive contributions.", projectId: p.id, readAt: ago(s.daysAgo - 1), createdAt: ago(s.daysAgo) });
+			if (s.status === "rejected") notifications.push({ id: uuid(rand), userId: demo.id, type: "project_rejected", title: `${p.title} was rejected`, body: s.reason!, projectId: p.id, readAt: null, createdAt: ago(s.daysAgo) });
+			if (s.status === "changes_requested") notifications.push({ id: uuid(rand), userId: demo.id, type: "project_changes_requested", title: `Changes requested on ${p.title}`, body: s.reason!, projectId: p.id, readAt: null, createdAt: ago(s.daysAgo) });
+			if (s.status === "under_review") notifications.push({ id: uuid(rand), userId: demo.id, type: "project_submitted", title: `We received ${p.title} for review`, body: "An admin will review it soon. You’ll be notified of the decision.", projectId: p.id, readAt: null, createdAt: p.submittedAt! });
+		}
+		if (s.status === "submitted")
+			for (const a of [admin, admin2])
+				notifications.push({ id: uuid(rand), userId: a.id, type: "review_requested", title: `${p.title} is waiting for review`, body: `Revision 1, submitted by ${owner.name}.`, projectId: p.id, readAt: null, createdAt: p.submittedAt! });
+	}
+	audit.forEach((a, i) => (a.id = audit.length - i));
+
+	// Contributions: confirmed totals for live projects, plus a pending and a failed one.
+	const wallets = Array.from({ length: 9 }, () => stellarAddress(rand));
+	const contributions: ContributionRec[] = [];
+	const add = (p: ProjectRec, status: ContributionRec["status"], daysAgo: number, assetId: string, amount: string, wallet: string) => {
+		const at = ago(daysAgo, Math.floor(rand() * 20));
 		contributions.push({
 			id: uuid(rand),
-			project_id: projectId,
-			intent_id: uuid(rand),
-			tx_hash: hex(64, rand),
-			network: "testnet",
-			sender_address: pick(wallets),
-			destination_or_contract: destination,
-			asset_id: "xlm",
-			amount: `${amount}.0000000`,
-			ledger_or_event_ref: null,
-			status: "confirmed",
-			failure_reason: null,
-			created_at: when,
-			confirmed_at: when,
+			projectId: p.id,
+			status,
+			contributorAddress: wallet,
+			assetId,
+			amount,
+			destination: p.payoutAddress!,
+			memo: `CS-${hex(6, rand).toUpperCase()}`,
+			fee: "0.0000100",
+			txHash: hex(64, rand),
+			expiresAt: iso(Date.parse(at) + 10 * 60_000),
+			submittedAt: at,
+			confirmedAt: status === "confirmed" ? at : null,
+			ledger: status === "confirmed" ? 1_100_000 + Math.floor(rand() * 90_000) : null,
+			failureReason: status === "failed" ? "Not enough XLM in the wallet for this amount and the network fee" : null,
+			resultCodes: status === "confirmed" ? ["tx_success"] : status === "failed" ? ["tx_failed", "op_underfunded"] : null,
+			createdAt: at,
+			updatedAt: at,
 		});
 	};
-	const projects: Project[] = SEED_PROJECTS.map(({ daysAgo, endsInDays, raised, owner, ...p }) => {
-		const approved = p.status === "approved";
-		const id = uuid(rand);
-		// Spread each seeded amount over the time the project has been live, plus a trickle of small ones.
-		const live = Math.max(1, daysAgo - 0.5);
-		(raised ?? []).forEach((amount) => contribute(id, amount, rand() * live));
-		if (approved)
-			for (let i = 0; i < 4 + Math.floor(rand() * 6); i++) contribute(id, String(5 + Math.floor(rand() * 90)), rand() * live);
-		const ownerId = owner === undefined ? builderId : otherIds[owner]!;
-		return {
-			id,
-			owner_user_id: ownerId,
-			problem: "",
-			solution: "",
-			beneficiaries: "",
-			cover_image_url: null,
-			logo_url: null,
-			contact_email: owner === undefined ? DEMO_BUILDER_EMAIL : OTHER_BUILDERS[owner]!.email,
-			team: [{ name: owner === undefined ? "Ada Builder" : OTHER_BUILDERS[owner]!.name, role: "Lead" }],
-			links: [],
-			fundraising: !!p.target_amount,
-			target_amount: null,
-			target_asset_id: p.target_amount ? "xlm" : null,
-			destination_address: p.target_amount ? destination : null,
-			visibility: approved ? "published" : "unpublished",
-			featured: false,
-			submitted_at: p.status === "draft" ? null : at(daysAgo + 3),
-			approved_at: approved ? at(daysAgo) : null,
-			ends_at: approved && endsInDays !== undefined ? iso(now + endsInDays * DAY) : null,
-			created_at: at(daysAgo + 5),
-			updated_at: at(daysAgo),
-			...p,
-		};
-	});
+	for (const p of projects.filter((x) => x.status === "approved" && x.fundraisingEnabled)) {
+		const n = 3 + Math.floor(rand() * 6);
+		for (let i = 0; i < n; i++) {
+			const assetId = p.acceptedAssetIds[i % p.acceptedAssetIds.length]!;
+			const amount = String([25, 50, 100, 150, 250, 40, 75][Math.floor(rand() * 7)]);
+			add(p, "confirmed", 1 + Math.floor(rand() * 25), assetId, amount, wallets[Math.floor(rand() * wallets.length)]!);
+		}
+	}
+	const solar = projects[0]!;
+	add(solar, "pending", 0, XLM, "60", wallets[0]!);
+	contributions.at(-1)!.submittedAt = iso(t0 - 25 * 60_000); // stuck > 10 min: shows on the admin overview
+	add(solar, "failed", 2, XLM, "9000", wallets[1]!);
+	notifications.push({ id: uuid(rand), userId: demo.id, type: "first_contribution", title: `${solar.title} received its first contribution`, body: "50 XLM was confirmed on Stellar.", projectId: solar.id, readAt: ago(20), createdAt: ago(21) });
 
-	const note = (n: Omit<MockNotification, "id" | "payload" | "read_by"> & Partial<MockNotification>): MockNotification => ({
-		id: uuid(rand),
-		payload: {},
-		read_by: [],
-		...n,
-	});
-	const forBuilder = { user_id: builderId, wallet_address: null, broadcast: false } as const;
-	const toAll = { user_id: null, wallet_address: null, broadcast: true } as const;
-
-	const notifications: MockNotification[] = [
-		...projects
-			.filter((p) => p.status === "approved")
-			.map((p) =>
-				note({
-					...toAll,
-					type: "project_published",
-					category: "projects",
-					title: `${p.title} is now open for contributions`,
-					action: { label: "Contribute", href: `/projects/${p.slug}` },
-					created_at: p.approved_at!,
-				}),
-			),
-		note({
-			...forBuilder,
-			type: "changes_requested",
-			category: "projects",
-			title: "Changes requested on Neighbourhood Tool Library",
-			body: "Please add a short summary of how tools are stored and lent out, and the Stellar address that should receive contributions.",
-			action: { label: "See what to change", href: `/builder/projects/${projects[4]!.id}` },
-			created_at: at(1),
-		}),
-		note({
-			...forBuilder,
-			type: "project_rejected",
-			category: "projects",
-			title: "Plastic-Free Markets was rejected",
-			body: "We couldn’t verify the market partners named in the plan. You’re welcome to submit a new project with letters of support from at least two markets.",
-			action: { label: "See why", href: `/builder/projects/${projects.find((p) => p.slug === "plastic-free-markets")!.id}` },
-			created_at: at(0.3),
-		}),
-		note({
-			...forBuilder,
-			type: "submission_received",
-			category: "projects",
-			title: "We received Mangrove Restoration Fund for review",
-			action: { label: "View status", href: `/builder/projects/${projects[3]!.id}` },
-			created_at: at(2),
-			read_by: [`u:${builderId}`],
-		}),
-		note({
-			...forBuilder,
-			type: "funding_milestone",
-			category: "contributions",
-			title: "Solar Schools Initiative passed 50% of its target",
-			action: { label: "View project", href: "/projects/solar-schools-initiative" },
-			created_at: at(3),
-			read_by: [`u:${builderId}`],
-		}),
-	].sort((a, b) => b.created_at.localeCompare(a.created_at));
-
-	// A few contributions that didn't (or haven't yet) confirmed, for the admin monitor. Never counted.
-	const live = projects.filter((p) => p.status === "approved");
-	const notCounted = (
-		status: "pending" | "failed",
-		p: Project,
-		amount: string,
-		daysAgo: number,
-		reason: string | null,
-	): MockContribution => ({
-		id: uuid(rand),
-		project_id: p.id,
-		intent_id: uuid(rand),
-		tx_hash: hex(64, rand),
-		network: "testnet",
-		sender_address: pick(wallets),
-		destination_or_contract: p.destination_address ?? destination,
-		asset_id: "xlm",
-		amount: `${amount}.0000000`,
-		ledger_or_event_ref: null,
-		status,
-		failure_reason: reason,
-		created_at: at(daysAgo),
-		confirmed_at: null,
-		reconcile_flag: status === "failed" ? reason : null,
-	});
-	contributions.push(
-		notCounted("pending", live[0]!, "120", 0.01, null),
-		notCounted("failed", live[1]!, "60", 2, "The payment’s memo didn’t match the contribution reference."),
-		notCounted("failed", live[2]!, "25", 5, "Stellar rejected the transaction (op_underfunded)."),
-	);
-
-	// Suggestions (PRD §6.6): published ones show on project pages; pending/reported wait for moderation.
-	const suggestion = (
-		p: Project,
-		s: Pick<Suggestion, "type" | "title" | "body" | "status"> & Partial<Suggestion>,
-		daysAgo: number,
-	): Suggestion => ({
-		id: uuid(rand),
-		project_id: p.id,
-		wallet_address: pick(wallets),
-		link: null,
-		report_count: 0,
-		created_at: at(daysAgo),
-		moderated_by: s.status === "pending_moderation" ? null : adminId,
-		moderated_at: s.status === "pending_moderation" ? null : at(Math.max(0, daysAgo - 0.5)),
-		moderation_reason: null,
-		...s,
-	});
-	const solar = projects.find((p) => p.slug === "solar-schools-initiative")!;
-	const water = projects.find((p) => p.slug === "open-water-map")!;
-	const code = projects.find((p) => p.slug === "code-club-lagos")!;
-	const suggestions: Suggestion[] = [
-		suggestion(
-			solar,
-			{
-				type: "product_improvement",
-				title: "Publish a per-school install log",
-				body: "A simple public log of which classrooms got kits and when would make progress easy to follow for everyone who contributed.",
-				status: "published",
-			},
-			9,
-		),
-		suggestion(
-			solar,
-			{
-				type: "technical_feedback",
-				title: "Use LiFePO4 batteries for the kits",
-				body: "They last far longer in hot classrooms than lead-acid batteries and need less maintenance, so the kits keep working after the first year.",
-				status: "published",
-			},
-			6,
-		),
-		suggestion(
-			solar,
-			{
-				type: "community_marketing",
-				title: "Partner with local radio for updates",
-				body: "A short monthly segment on community radio would reach parents who aren’t online and build trust in the project.",
-				status: "pending_moderation",
-			},
-			0.4,
-		),
-		suggestion(
-			water,
-			{
-				type: "technical_feedback",
-				title: "Offline mode for the map",
-				body: "Many water points are in places with no signal. Caching the map tiles and syncing reports later would help field volunteers a lot.",
-				status: "published",
-			},
-			4,
-		),
-		suggestion(
-			water,
-			{
-				type: "other",
-				title: "Free tokens for everyone!!!",
-				body: "Click my link to claim free tokens and double your contribution in minutes, limited time offer for early users only.",
-				status: "pending_moderation",
-				report_count: 3,
-				link: "https://example.com/claim",
-			},
-			0.2,
-		),
-		suggestion(
-			code,
-			{
-				type: "product_improvement",
-				title: "Add a girls-only weekend cohort",
-				body: "A dedicated cohort with a mentor could help more girls join and stay. Other clubs saw retention improve with this.",
-				status: "published",
-			},
-			2,
-		),
-		suggestion(
-			code,
-			{
-				type: "community_marketing",
-				title: "Share student projects on the page",
-				body: "Posting a few student projects each month as updates would show contributors exactly what their support makes possible.",
-				status: "rejected",
-				moderation_reason: "Duplicate of an existing suggestion.",
-			},
-			3,
-		),
+	// Suggestions and a report.
+	const suggestions: SuggestionRec[] = [];
+	const suggest = (p: ProjectRec, type: SuggestionType, title: string, body: string, status: SuggestionStatus, daysAgo: number, wallet: string, note: string | null = null) =>
+		suggestions.push({ id: uuid(rand), projectId: p.id, walletAddress: wallet, type, title, body, link: null, status, moderationNote: note, moderatedAt: status === "pending" ? null : ago(daysAgo - 1 < 0 ? 0 : daysAgo - 1), moderatedBy: status === "pending" ? null : admin.id, createdAt: ago(daysAgo) });
+	suggest(solar, "product_improvement", "Publish a per-school install log", "A short log per school (date, kit size, photos) would show supporters exactly where the funds went.", "published", 10, wallets[2]!);
+	suggest(solar, "technical_feedback", "Use LiFePO4 batteries for the kits", "They last far longer in heat than lead-acid batteries and need less maintenance over the years.", "published", 7, wallets[3]!);
+	suggest(solar, "community_marketing", "Partner with local radio for updates", "Community radio reaches parents who aren’t online. A monthly slot could share progress.", "pending", 1, wallets[4]!);
+	suggest(projects[1]!, "product_improvement", "Offline mode for the map", "Many water points are in areas with poor signal. Caching the map would make it usable there.", "published", 6, wallets[5]!);
+	suggest(projects[1]!, "other", "Free tokens for everyone!!!", "Click my link to claim free tokens now, limited offer for the first hundred wallets only!!", "pending", 0, wallets[6]!);
+	suggest(projects[2]!, "community_marketing", "Share student projects on the page", "Showing what students built each term would bring in more volunteers and supporters.", "rejected", 5, wallets[7]!, "Please share this with the club directly; we keep suggestions about the project itself.");
+	const reports: MockDb["reports"] = [
+		{ id: uuid(rand), entityType: "suggestion", entityId: suggestions[3]!.id, entityTitle: suggestions[3]!.title, reporterAddress: wallets[8]!, reason: "spam", details: "Looks like a copy-paste from another project.", status: "open", resolutionNote: null, resolvedBy: null, resolvedAt: null, createdAt: ago(1) },
+		{ id: uuid(rand), entityType: "project", entityId: projects[3]!.id, entityTitle: projects[3]!.title, reporterAddress: wallets[2]!, reason: "misleading", details: "The demo link doesn’t work.", status: "open", resolutionNote: null, resolvedBy: null, resolvedAt: null, createdAt: ago(0, 5) },
 	];
 
-	// Review records behind the seeded decisions: the builder sees `reason`, admins also see `internal_note`.
-	const bySlug = (slug: string) => projects.find((p) => p.slug === slug)!;
-	const review = (
-		slug: string,
-		decision: ProjectReview["decision"],
-		reason: string | null,
-		internal: string | null,
-		daysAgo: number,
-	): ProjectReview => ({
-		id: uuid(rand),
-		project_id: bySlug(slug).id,
-		admin_user_id: adminId,
-		decision,
-		reason,
-		internal_note: internal,
-		created_at: at(daysAgo),
-	});
-	const reviews: ProjectReview[] = [
-		review(
-			"neighbourhood-tool-library",
-			"request_changes",
-			"Please add a short summary of how tools are stored and lent out, and the Stellar address that should receive contributions.",
-			"Good idea, thin on details.",
-			1,
-		),
-		review(
-			"plastic-free-markets",
-			"reject",
-			"We couldn’t verify the market partners named in the plan. You’re welcome to submit a new project with letters of support from at least two markets.",
-			"Two of the named markets said they hadn’t heard of it.",
-			0.3,
-		),
-		review(
-			"token-launchpad",
-			"reject",
-			"Token sales and presales aren’t allowed on Chucksales (see the Terms of use).",
-			"Out of scope per PRD §2.",
-			8.5,
-		),
-		review("open-bus-times", "under_review", null, null, 1.2),
-	];
-
-	// Audit history for the seeded approvals (every admin action is audited, PRD §18).
-	const audit: AuditLog[] = projects
-		.filter((p) => p.approved_at)
-		.map((p) => ({
-			id: uuid(rand),
-			actor_user_id: adminId,
-			action: "project.approve",
-			entity_type: "project",
-			entity_id: p.id,
-			before_snapshot: { status: "under_review", visibility: "unpublished" },
-			after_snapshot: { status: "approved", visibility: "published", reason: null },
-			created_at: p.approved_at!,
-		}));
+	// Analytics events over the last 30 days.
+	const events: MockDb["events"] = [];
+	for (const p of projects) {
+		events.push({ name: "project_draft_created", at: p.createdAt, projectId: p.id });
+		if (p.submittedAt) events.push({ name: "project_submitted", at: p.submittedAt, projectId: p.id });
+		if (p.decidedAt) events.push({ name: "project_review_decided", at: p.decidedAt, projectId: p.id });
+		if (p.publishedAt) {
+			events.push({ name: "project_published", at: p.publishedAt, projectId: p.id });
+			for (let d = 0; d < 30; d++) for (let k = Math.floor(rand() * 6); k > 0; k--) events.push({ name: "project_viewed", at: ago(d, Math.floor(rand() * 23)), projectId: p.id });
+		}
+	}
+	for (const c of contributions) {
+		events.push({ name: "contribution_started", at: c.createdAt, projectId: c.projectId, wallet: c.contributorAddress });
+		events.push({ name: "contribution_submitted", at: c.createdAt, projectId: c.projectId, wallet: c.contributorAddress });
+		if (c.status === "confirmed") events.push({ name: "contribution_confirmed", at: c.createdAt, projectId: c.projectId });
+		if (c.status === "failed") events.push({ name: "contribution_failed", at: c.createdAt, projectId: c.projectId });
+	}
+	for (const s of suggestions) events.push({ name: "suggestion_submitted", at: s.createdAt, projectId: s.projectId, wallet: s.walletAddress });
+	for (const u of users.filter((x) => x.role === "builder")) events.push({ name: "builder_registered", at: u.createdAt });
+	for (const w of wallets) events.push({ name: "wallet_connected", at: ago(Math.floor(rand() * 28)), wallet: w });
 
 	return {
 		version,
-		seededAt: iso(now),
-		users: [
-			{
-				id: builderId,
-				email: DEMO_BUILDER_EMAIL,
-				password: DEMO_PASSWORD,
-				role: "builder",
-				email_verified: true,
-				status: "active",
-				is_active: true,
-				mfa_code: null,
-				created_at: at(60),
-				updated_at: at(60),
-			},
-			{
-				id: adminId,
-				email: DEMO_ADMIN_EMAIL,
-				password: DEMO_PASSWORD,
-				role: "admin",
-				email_verified: true,
-				status: "active",
-				is_active: true,
-				mfa_code: DEMO_ADMIN_MFA,
-				created_at: at(90),
-				updated_at: at(90),
-			},
-			...OTHER_BUILDERS.map((b, i) => ({
-				id: otherIds[i]!,
-				email: b.email,
-				password: hex(16, rand),
-				role: "builder" as const,
-				email_verified: true,
-				status: "active" as const,
-				is_active: true,
-				mfa_code: null,
-				created_at: at(70 - i * 10),
-				updated_at: at(70 - i * 10),
-			})),
-		],
-		profiles: [
-			{
-				id: uuid(rand),
-				user_id: builderId,
-				display_name: "Ada Builder",
-				organization_name: "Open Commons Lab",
-				bio: null,
-				website: null,
-				contact_email: DEMO_BUILDER_EMAIL,
-				avatar_url: null,
-				wallet_address: destination,
-				twitter_url: null,
-				discord_url: null,
-				telegram_url: null,
-			},
-			...[...OTHER_BUILDERS, { name: "Site Admin", email: DEMO_ADMIN_EMAIL, org: null }].map((b, i) => ({
-				id: uuid(rand),
-				user_id: i < OTHER_BUILDERS.length ? otherIds[i]! : adminId,
-				display_name: b.name,
-				organization_name: b.org,
-				bio: null,
-				website: null,
-				contact_email: b.email,
-				avatar_url: null,
-				wallet_address: null,
-				twitter_url: null,
-				discord_url: null,
-				telegram_url: null,
-			})),
-		],
-		categories: [
-			{ id: "cat-education", name: "Education", slug: "education", is_active: true },
-			{ id: "cat-climate", name: "Climate", slug: "climate", is_active: true },
-			{ id: "cat-public-goods", name: "Public goods", slug: "public-goods", is_active: true },
-			{ id: "cat-community", name: "Community", slug: "community", is_active: true },
-		],
-		projects,
-		revisions: [],
-		reviews,
-		updates: [],
-		intents: [],
-		contributions,
-		suggestions,
-		reports: [],
-		notifications,
+		seededAt: iso(t0),
+		users,
+		refreshTokens: [],
 		otps: [],
-		seededWallets: [],
-		seededContributionWallets: [],
+		categories,
+		projects,
+		reviews,
+		revisions,
+		contributions,
+		walletSessions: [],
+		challenges: [],
+		suggestions,
+		reports,
+		restrictions: [],
+		notifications: notifications.sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
 		audit,
-		adminAccounts: {
-			[adminId]: {
-				first_name: "Site",
-				last_name: "Admin",
-				phone: null,
-				bio: "Lead Admin",
-				country: "Nigeria",
-				city: "Lagos",
-				postal_code: null,
-				avatar_url: null,
-				password_changed_at: at(90),
-				notifications: {
-					new_submissions: true,
-					resubmissions: true,
-					reported_suggestions: true,
-					contribution_issues: true,
-					weekly_summary: false,
-				},
-			},
-		},
+		events,
 		rateLimits: {},
 	};
 }

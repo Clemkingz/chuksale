@@ -1,6 +1,6 @@
-/** Registers every route with the mock router. The contract for each one is in docs/API.md. */
+/** Registers every route with the mock router. The contract is the live API's (`/docs-json`). */
 import "./auth";
-import "./projects";
+import "./public";
 import "./builder";
 import "./admin";
 import "./contributions";

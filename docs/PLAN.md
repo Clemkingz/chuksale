@@ -32,6 +32,16 @@ Supporting docs: `docs/DECISIONS.md` (PRD §17 assumptions; read first), `docs/A
 
 ---
 
+## Status (6 Nov 2026): connected to the ChuckSales API
+
+- Web and admin call the live API by default (`NEXT_PUBLIC_API_URL`, staging on Render); the mock is opt-in
+  (`NEXT_PUBLIC_API_SOURCE=mock`) and speaks the same contract. See `docs/API.md`.
+- UI trimmed to what the API has (logos, time left, avatars, socials, wallet notifications, updates, Google sign-in,
+  admin MFA and extra admin profile fields removed). Settled decisions are listed at the end of `docs/DECISIONS.md`.
+- Verified: type-check, lint and unit tests (domain + mock contract tests); live smoke test (public pages, sign-in
+  errors, guards, wallet dialog); mock end-to-end journeys for contributor, builder and admin.
+- Open: Vercel origins must be added to the backend's CORS list; staging codes come from the backend owner.
+
 ## Status (5 Nov 2026)
 
 Every PRD page now exists and runs on the mock backend:

@@ -1,29 +1,18 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { InvalidTransitionError, ReasonRequiredError } from "./model-rules";
+import type { AuthTokens, Page, Project, PublicProject, PublicProjectCard } from "@repo/domain/types";
 import { read, resetMockDb } from "./db";
-import { HttpError, TOKEN_PREFIX, dispatch } from "./router";
+import { HttpError, dispatch } from "./router";
 import { DEMO_ADMIN_EMAIL, DEMO_BUILDER_EMAIL } from "./seed";
 import "./handlers";
 
 /**
- * The PRD's "must never break" rules (docs/PLAN.md), proven against the mock backend the UI talks to:
- * role protection, owner checks, public visibility, confirmed-only totals, idempotent submits, moderation,
- * rate limits and the review state machine.
+ * The live API's rules, proven against the mock the apps use in mock mode: roles, public visibility, submit
+ * validation, the review actions, single-use refresh tokens, wallet sign-in, confirmed-only totals and moderation.
  */
 
-type Res = { status_code: number; data: never };
-const call = async (
-	method: string,
-	path: string,
-	opts: { body?: Record<string, unknown>; token?: string; query?: Record<string, string> } = {},
-) =>
-	(await dispatch(
-		method,
-		path,
-		new URLSearchParams(opts.query),
-		opts.body ?? {},
-		opts.token ? `Bearer ${opts.token}` : undefined,
-	)) as Res;
+type Env<T> = { statusCode: number; data: T };
+const call = async <T = unknown>(method: string, path: string, opts: { body?: Record<string, unknown>; token?: string; query?: Record<string, string> } = {}) =>
+	(await dispatch(method, path, new URLSearchParams(opts.query), opts.body ?? {}, opts.token ? `Bearer ${opts.token}` : undefined)) as Env<T>;
 
 async function status(p: Promise<unknown>) {
 	try {
@@ -31,174 +20,189 @@ async function status(p: Promise<unknown>) {
 		return 200;
 	} catch (e) {
 		if (e instanceof HttpError) return e.status;
-		if (e instanceof InvalidTransitionError) return 409;
-		if (e instanceof ReasonRequiredError) return 422;
 		throw e;
 	}
 }
 
-const tokenFor = (email: string) => `${TOKEN_PREFIX}${read().users.find((u) => u.email === email)!.id}.test`;
-const WALLET = `G${"A".repeat(55)}`;
-const OTHER_WALLET = `G${"B".repeat(55)}`;
+async function errorOf(p: Promise<unknown>) {
+	try {
+		await p;
+	} catch (e) {
+		if (e instanceof HttpError) return e;
+	}
+	throw new Error("expected an error");
+}
+
+const login = async (email: string) => (await call<AuthTokens>("POST", "/auth/login", { body: { email, password: "Password1" } })).data;
+
+async function connectWallet(address: string) {
+	const ch = (await call<{ transaction: string }>("POST", "/wallet-auth/challenge", { body: { address } })).data;
+	return (await call<{ walletToken: string }>("POST", "/wallet-auth/verify", { body: { transaction: `demo-signed:${ch.transaction}` } })).data.walletToken;
+}
+
+const WALLET = `G${"B".repeat(55)}`;
 
 beforeEach(() => resetMockDb());
 
-describe("role protection (PRD §18 rule 2)", () => {
-	it("refuses a builder token on admin endpoints", async () => {
-		expect(await status(call("GET", "/admin/projects", { token: tokenFor(DEMO_BUILDER_EMAIL) }))).toBe(403);
-		expect(await status(call("GET", "/admin/overview", { token: tokenFor(DEMO_BUILDER_EMAIL) }))).toBe(403);
+describe("auth", () => {
+	it("routes on role and keeps refresh tokens single use", async () => {
+		const t = await login(DEMO_BUILDER_EMAIL);
+		expect(t.role).toBe("builder");
+		expect((await login(DEMO_ADMIN_EMAIL)).role).toBe("admin");
+		const next = (await call<AuthTokens>("POST", "/auth/refresh", { body: { refreshToken: t.refreshToken } })).data;
+		expect(next.refreshToken).not.toBe(t.refreshToken);
+		expect(await status(call("POST", "/auth/refresh", { body: { refreshToken: t.refreshToken } }))).toBe(401);
 	});
 
-	it("refuses anonymous requests to builder and admin endpoints", async () => {
+	it("says 401 for a wrong password and 403 for an unverified email", async () => {
+		expect(await status(call("POST", "/auth/login", { body: { email: DEMO_BUILDER_EMAIL, password: "nope12345" } }))).toBe(401);
+		await call("POST", "/auth/register", { body: { name: "New Builder", email: "new@demo.local", password: "longenough" } });
+		const e = await errorOf(call("POST", "/auth/login", { body: { email: "new@demo.local", password: "longenough" } }));
+		expect([e.status, e.message]).toEqual([403, "Email not verified"]);
+	});
+
+	it("returns validation details one line per problem", async () => {
+		const e = await errorOf(call("POST", "/auth/register", { body: { email: "bad" } }));
+		expect(e.status).toBe(400);
+		expect(e.details).toContain("email must be an email");
+	});
+});
+
+describe("roles", () => {
+	it("gives builders 403 on admin routes and admins 403 on builder routes", async () => {
+		const b = await login(DEMO_BUILDER_EMAIL);
+		const a = await login(DEMO_ADMIN_EMAIL);
+		expect(await status(call("GET", "/admin/projects", { token: b.accessToken }))).toBe(403);
+		expect(await status(call("GET", "/builder/projects", { token: a.accessToken }))).toBe(403);
 		expect(await status(call("GET", "/builder/projects"))).toBe(401);
-		expect(await status(call("GET", "/admin/projects"))).toBe(401);
 	});
 
-	it("gives a builder 403 on another builder's project", async () => {
+	it("hides another builder's project (404)", async () => {
+		const b = await login(DEMO_BUILDER_EMAIL);
 		const db = read();
 		const demo = db.users.find((u) => u.email === DEMO_BUILDER_EMAIL)!;
-		const someoneElses = db.projects.find((p) => p.owner_user_id !== demo.id)!;
-		expect(await status(call("GET", `/builder/projects/${someoneElses.id}`, { token: tokenFor(DEMO_BUILDER_EMAIL) }))).toBe(403);
+		const other = db.projects.find((p) => p.ownerId !== demo.id)!;
+		expect(await status(call("GET", `/builder/projects/${other.id}`, { token: b.accessToken }))).toBe(404);
 	});
 });
 
-describe("public visibility (FR-REV-05)", () => {
-	it("lists only approved + published projects, without owner emails", async () => {
-		const res = await call("GET", "/projects", { query: { limit: "50" } });
-		const items = (res.data as { items: Record<string, unknown>[] }).items;
+describe("public visibility", () => {
+	it("lists only approved and published projects", async () => {
+		const page = (await call<Page<PublicProjectCard>>("GET", "/projects", { query: { limit: "100" } })).data;
 		const db = read();
-		const slugs = db.projects.filter((p) => p.status === "approved" && p.visibility === "published").map((p) => p.slug);
-		expect(items.map((p) => p.slug).sort()).toEqual(slugs.sort());
-		for (const p of items) {
-			expect(p).not.toHaveProperty("owner_user_id");
-			expect(p).not.toHaveProperty("status");
-			expect(p.contact_email).toBeNull();
-		}
+		const live = db.projects.filter((p) => p.status === "approved" && p.published).map((p) => p.slug);
+		expect(page.result.map((p) => p.slug).sort()).toEqual(live.sort());
+		expect(page.paginationMeta.totalCount).toBe(live.length);
 	});
 
-	it("404s an unapproved project's slug", async () => {
-		const pending = read().projects.find((p) => p.status === "under_review")!;
-		expect(await status(call("GET", `/projects/${pending.slug}`))).toBe(404);
-	});
-});
-
-describe("contributions (FR-CON-*)", () => {
-	async function start(amount = "10") {
-		const slug = read().projects.find((p) => p.status === "approved" && p.destination_address)!.slug;
-		const res = await call("POST", "/contributions/intents", {
-			body: { project_slug: slug, wallet_address: WALLET, asset_id: "xlm", amount },
-		});
-		return { slug, intent: res.data as { id: string; reference: string } };
-	}
-
-	it("rejects amounts under the minimum or with more than 7 decimals", async () => {
-		const slug = read().projects.find((p) => p.status === "approved")!.slug;
-		const bad = (amount: string) =>
-			call("POST", "/contributions/intents", { body: { project_slug: slug, wallet_address: WALLET, asset_id: "xlm", amount } });
-		expect(await status(bad("0.5"))).toBe(422);
-		expect(await status(bad("1.12345678"))).toBe(422);
-		expect(await status(bad("abc"))).toBe(422);
-	});
-
-	it("counts the same transaction hash once (idempotent submit)", async () => {
-		const { intent } = await start();
-		const hash = "a".repeat(64);
-		const first = (await call("POST", `/contributions/intents/${intent.id}/submit`, { body: { tx_hash: hash } })).data as {
-			id: string;
-		};
-		const second = (await call("POST", `/contributions/intents/${intent.id}/submit`, { body: { tx_hash: hash } })).data as {
-			id: string;
-		};
-		expect(second.id).toBe(first.id);
-		expect(read().contributions.filter((c) => c.tx_hash === hash)).toHaveLength(1);
-	});
-
-	it("never counts a pending contribution toward the raised total", async () => {
-		const { slug, intent } = await start("500");
-		const before = ((await call("GET", `/projects/${slug}`)).data as { raised_amount: string }).raised_amount;
-		await call("POST", `/contributions/intents/${intent.id}/submit`, { body: { tx_hash: "b".repeat(64) } });
-		const after = ((await call("GET", `/projects/${slug}`)).data as { raised_amount: string }).raised_amount;
-		expect(after).toBe(before);
-	});
-
-	it("refuses contributions to a project that isn't live", async () => {
+	it("404s a project in review and never shows owner emails", async () => {
 		const pending = read().projects.find((p) => p.status === "submitted")!;
-		const res = call("POST", "/contributions/intents", {
-			body: { project_slug: pending.slug, wallet_address: WALLET, asset_id: "xlm", amount: "5" },
-		});
-		expect(await status(res)).toBe(409);
+		expect(await status(call("GET", `/projects/${pending.slug ?? "x"}`))).toBe(404);
+		const live = read().projects.find((p) => p.status === "approved")!;
+		const page = (await call<PublicProject>("GET", `/projects/${live.slug}`)).data;
+		expect(JSON.stringify(page)).not.toContain("@demo.local");
+	});
+
+	it("refuses limits over 100", async () => {
+		expect(await status(call("GET", "/projects", { query: { limit: "500" } }))).toBe(400);
 	});
 });
 
-describe("suggestions + moderation (D8, FR-SUG-*)", () => {
-	const slug = () => read().projects.find((p) => p.status === "approved")!.slug;
-	const suggest = (wallet: string, n: number) =>
-		call("POST", `/projects/${slug()}/suggestions`, {
-			body: {
-				wallet_address: wallet,
-				type: "other",
-				title: `Idea number ${n}`,
-				body: "A suggestion long enough to pass the length rule.",
-			},
-		});
-
-	it("keeps new suggestions out of the public list until published", async () => {
-		const created = (await suggest(WALLET, 1)).data as { id: string; status: string };
-		expect(created.status).toBe("pending_moderation");
-		const list = (await call("GET", `/projects/${slug()}/suggestions`)).data as { items: { id: string }[] };
-		expect(list.items.some((s) => s.id === created.id)).toBe(false);
-
-		await call("POST", `/admin/suggestions/${created.id}/moderate`, {
-			body: { action: "publish" },
-			token: tokenFor(DEMO_ADMIN_EMAIL),
-		});
-		const after = (await call("GET", `/projects/${slug()}/suggestions`)).data as { items: { id: string }[] };
-		expect(after.items.some((s) => s.id === created.id)).toBe(true);
+describe("builder projects", () => {
+	it("creates a draft and lists what's missing on submit, in form order", async () => {
+		const b = await login(DEMO_BUILDER_EMAIL);
+		const p = (await call<Project>("POST", "/builder/projects", { token: b.accessToken, body: { type: "new_idea", title: "Market Pay" } })).data;
+		expect(p.status).toBe("draft");
+		expect(p.permissions).toEqual({ canEdit: true, canSubmit: true, canDelete: true });
+		const e = await errorOf(call("POST", `/builder/projects/${p.id}/submit`, { token: b.accessToken }));
+		expect(e.status).toBe(400);
+		expect(e.details?.[0]).toMatch(/^summary/);
+		expect(e.details).toContain("teamMembers must list at least one person");
 	});
 
-	it("allows 3 suggestions per wallet per hour, then 429", async () => {
-		for (let n = 1; n <= 3; n++) expect(await status(suggest(OTHER_WALLET, n))).toBe(200);
-		expect(await status(suggest(OTHER_WALLET, 4))).toBe(429);
-	});
-
-	it("stores markup as plain text (the UI never renders it as HTML)", async () => {
-		const res = await call("POST", `/projects/${slug()}/suggestions`, {
-			body: {
-				wallet_address: WALLET,
-				type: "other",
-				title: "<img src=x onerror=alert(1)>",
-				body: "<script>alert('x')</script> long enough body text",
-			},
-		});
-		expect((res.data as { title: string }).title).toBe("<img src=x onerror=alert(1)>");
+	it("rejects unknown fields and locks a submitted project", async () => {
+		const b = await login(DEMO_BUILDER_EMAIL);
+		const p = (await call<Project>("POST", "/builder/projects", { token: b.accessToken, body: { type: "new_idea", title: "Thing" } })).data;
+		expect(await status(call("PATCH", `/builder/projects/${p.id}`, { token: b.accessToken, body: { logo: "x" } }))).toBe(400);
+		const inReview = read().projects.find((x) => x.status === "under_review" && read().users.find((u) => u.id === x.ownerId)?.email === DEMO_BUILDER_EMAIL)!;
+		expect(await status(call("PATCH", `/builder/projects/${inReview.id}`, { token: b.accessToken, body: { title: "New title" } }))).toBe(409);
 	});
 });
 
-describe("review state machine (PRD §18 rule 3)", () => {
-	const admin = () => tokenFor(DEMO_ADMIN_EMAIL);
+describe("review actions", () => {
+	it("needs a reason to reject, and answers 409 to an action that doesn't fit", async () => {
+		const a = await login(DEMO_ADMIN_EMAIL);
+		const submitted = read().projects.find((p) => p.status === "submitted")!;
+		expect(await status(call("POST", `/admin/projects/${submitted.id}/actions`, { token: a.accessToken, body: { action: "reject" } }))).toBe(400);
+		const rejected = read().projects.find((p) => p.status === "rejected")!;
+		expect(await status(call("POST", `/admin/projects/${rejected.id}/actions`, { token: a.accessToken, body: { action: "approve" } }))).toBe(409);
+	});
 
-	it("requires a reason to reject or request changes", async () => {
+	it("approving publishes with a slug, notifies the builder and writes the audit log", async () => {
+		const a = await login(DEMO_ADMIN_EMAIL);
 		const p = read().projects.find((x) => x.status === "submitted")!;
-		expect(await status(call("POST", `/admin/projects/${p.id}/decision`, { body: { decision: "reject" }, token: admin() }))).toBe(
-			422,
-		);
-	});
-
-	it("rejects transitions the state machine doesn't allow", async () => {
-		const p = read().projects.find((x) => x.status === "rejected")!;
-		expect(
-			await status(call("POST", `/admin/projects/${p.id}/decision`, { body: { decision: "approve" }, token: admin() })),
-		).toBe(409);
-	});
-
-	it("approving publishes the project and writes an audit entry", async () => {
-		const p = read().projects.find((x) => x.status === "under_review")!;
 		const before = read().audit.length;
-		await call("POST", `/admin/projects/${p.id}/decision`, { body: { decision: "approve" }, token: admin() });
+		await call("POST", `/admin/projects/${p.id}/actions`, { token: a.accessToken, body: { action: "approve" } });
 		const after = read().projects.find((x) => x.id === p.id)!;
-		expect(after.status).toBe("approved");
-		expect(after.visibility).toBe("published");
+		expect([after.status, after.published, !!after.slug]).toEqual(["approved", true, true]);
 		expect(read().audit.length).toBe(before + 1);
-		expect(await status(call("GET", `/projects/${p.slug}`))).toBe(200);
+		expect(read().notifications.some((n) => n.userId === p.ownerId && n.type === "project_approved" && n.projectId === p.id)).toBe(true);
+		expect(await status(call("GET", `/projects/${after.slug}`))).toBe(200);
+	});
+});
+
+describe("contributions", () => {
+	it("needs a wallet session, prepares, and never counts a pending payment", async () => {
+		const live = read().projects.find((p) => p.status === "approved" && p.fundraisingEnabled && p.acceptedAssetIds.includes("XLM"))!;
+		expect(await status(call("POST", `/projects/${live.slug}/contributions`, { body: { assetId: "XLM", amount: "5" } }))).toBe(401);
+		const wt = await connectWallet(WALLET);
+		const prep = (await call<{ id: string; status: string; transaction: string }>("POST", `/projects/${live.slug}/contributions`, { token: wt, body: { assetId: "XLM", amount: "5" } })).data;
+		expect(prep.status).toBe("awaiting_signature");
+		const raisedBefore = (await call<PublicProject>("GET", `/projects/${live.slug}`)).data.funding!.raised.find((r) => r.asset.id === "XLM")!.amount;
+		const sub = (await call<{ status: string }>("POST", `/contributions/${prep.id}/submit`, { token: wt, body: { transaction: `demo-signed:${prep.transaction}` } })).data;
+		expect(sub.status).toBe("pending");
+		const raisedAfter = (await call<PublicProject>("GET", `/projects/${live.slug}`)).data.funding!.raised.find((r) => r.asset.id === "XLM")!.amount;
+		expect(raisedAfter).toBe(raisedBefore);
+	});
+
+	it("refuses an asset the project doesn't accept and a wrong signed transaction", async () => {
+		const xlmOnly = read().projects.find((p) => p.status === "approved" && p.acceptedAssetIds.length === 1 && p.acceptedAssetIds[0] === "XLM")!;
+		const wt = await connectWallet(WALLET);
+		const usdc = read().projects.find((p) => p.acceptedAssetIds.some((a) => a.startsWith("USDC")))!.acceptedAssetIds.find((a) => a.startsWith("USDC"))!;
+		expect(await status(call("POST", `/projects/${xlmOnly.slug}/contributions`, { token: wt, body: { assetId: usdc, amount: "5" } }))).toBe(400);
+		const prep = (await call<{ id: string }>("POST", `/projects/${xlmOnly.slug}/contributions`, { token: wt, body: { assetId: "XLM", amount: "5" } })).data;
+		expect(await status(call("POST", `/contributions/${prep.id}/submit`, { token: wt, body: { transaction: "something-else" } }))).toBe(400);
+	});
+});
+
+describe("suggestions and moderation", () => {
+	it("keeps new suggestions private until approved, and refuses a duplicate report", async () => {
+		const live = read().projects.find((p) => p.status === "approved")!;
+		const wt = await connectWallet(WALLET);
+		const s = (await call<{ id: string; status: string }>("POST", `/projects/${live.slug}/suggestions`, {
+			token: wt,
+			body: { type: "other", title: "A useful idea", body: "A suggestion long enough to pass the rule." },
+		})).data;
+		expect(s.status).toBe("pending");
+		const list = async () => (await call<Page<{ id: string }>>("GET", `/projects/${live.slug}/suggestions`)).data.result;
+		expect((await list()).some((x) => x.id === s.id)).toBe(false);
+		const a = await login(DEMO_ADMIN_EMAIL);
+		expect(await status(call("POST", `/admin/suggestions/${s.id}/actions`, { token: a.accessToken, body: { action: "hide" } }))).toBe(400);
+		await call("POST", `/admin/suggestions/${s.id}/actions`, { token: a.accessToken, body: { action: "approve" } });
+		expect((await list()).some((x) => x.id === s.id)).toBe(true);
+
+		const other = await connectWallet(`G${"C".repeat(55)}`);
+		await call("POST", `/suggestions/${s.id}/reports`, { token: other, body: { reason: "spam" } });
+		expect(await status(call("POST", `/suggestions/${s.id}/reports`, { token: other, body: { reason: "spam" } }))).toBe(409);
+	});
+
+	it("stores markup as plain text", async () => {
+		const live = read().projects.find((p) => p.status === "approved")!;
+		const wt = await connectWallet(WALLET);
+		const s = (await call<{ title: string }>("POST", `/projects/${live.slug}/suggestions`, {
+			token: wt,
+			body: { type: "other", title: "<img src=x onerror=alert(1)>", body: "<script>alert('x')</script> long enough body text" },
+		})).data;
+		expect(s.title).toBe("<img src=x onerror=alert(1)>");
 	});
 });

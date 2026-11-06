@@ -1,410 +1,297 @@
-import type { BuilderProfileSummary, BuilderProjectListItem, Project, ProjectLink } from "../model";
-import { countsTowardTotal } from "../model-rules";
-import { sum } from "@repo/domain/money";
-import { inBuilderGroup, isBuilderEditable, transition, type BuilderProjectGroup } from "../model-rules";
-import { read, update, type MockDb, type MockUser } from "../db";
-import { HttpError, ok, route } from "../router";
-import { iso, paginate, uuid } from "../util";
+import type { ProjectInsights, ProjectStage, ProjectType } from "@repo/domain/types";
+import { isValidAmount } from "@repo/domain/money";
+import { read, update } from "../db";
+import type { MockDb, ProjectRec } from "../records";
+import { HttpError, NoContent, invalid, ok, route, type Ctx } from "../router";
+import { uuid } from "../util";
+import { assetById, audit, contributionDto, event, isAddress, lengthRule, notifyUser, now, page, projectDto } from "../common";
 
-/**
- * /builder/*: the signed-in builder's profile and own projects (FR-PROJ-06: never anyone else's).
- * Designs "Dev add project 1–3": dashboard (profile, tabs, search, table) and the Add Project form.
- * Contract: docs/API.md § Builder.
- */
+/** A builder's own projects (backend guide, "Projects"). Admins get 403 here. */
 
-const ASSET_CODE: Record<string, string> = { xlm: "XLM", usdc: "USDC" };
-const GROUPS: BuilderProjectGroup[] = ["all", "pending", "completed"];
+const TYPES: ProjectType[] = ["new_idea", "existing_project"];
+const STAGES: ProjectStage[] = ["idea", "prototype", "mvp", "launched", "scaling"];
+const FIELDS = [
+	"type",
+	"title",
+	"summary",
+	"problem",
+	"solution",
+	"categoryId",
+	"stage",
+	"beneficiaries",
+	"teamMembers",
+	"links",
+	"fundraisingEnabled",
+	"targetAmount",
+	"targetAssetId",
+	"acceptedAssetIds",
+	"payoutAddress",
+];
 
-const STELLAR_ADDRESS = /^G[A-Z2-7]{55}$/;
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-/** The form downsizes images in the browser, so a real logo is far below this. */
-const LOGO = /^data:image\/(png|jpeg|gif|svg\+xml|webp);base64,[A-Za-z0-9+/=]+$/;
-const MAX_LOGO_CHARS = 1_500_000;
-
-function profileOf(db: MockDb, user: MockUser): BuilderProfileSummary {
-	const p = db.profiles.find((x) => x.user_id === user.id);
-	return {
-		display_name: p?.display_name ?? user.email,
-		organization_name: p?.organization_name ?? null,
-		bio: p?.bio ?? null,
-		avatar_url: p?.avatar_url ?? null,
-		wallet_address: p?.wallet_address ?? null,
-		contact_email: p?.contact_email ?? user.email,
-		website: p?.website ?? null,
-		twitter_url: p?.twitter_url ?? null,
-		discord_url: p?.discord_url ?? null,
-		telegram_url: p?.telegram_url ?? null,
-		email: user.email,
-		joined_at: user.created_at,
-	};
-}
-
-function listItem(db: MockDb, p: Project): BuilderProjectListItem {
-	const confirmed = db.contributions.filter((c) => c.project_id === p.id && countsTowardTotal(c.status));
-	const category = db.categories.find((c) => c.id === p.category_id);
-	return {
-		id: p.id,
-		title: p.title,
-		slug: p.slug,
-		logo_url: p.logo_url,
-		status: p.status,
-		visibility: p.visibility,
-		fundraising: p.fundraising,
-		target_amount: p.target_amount,
-		destination_address: p.destination_address,
-		ends_at: p.ends_at,
-		created_at: p.created_at,
-		updated_at: p.updated_at,
-		category: category ? { id: category.id, name: category.name } : null,
-		target_asset: p.target_asset_id ? { id: p.target_asset_id, code: ASSET_CODE[p.target_asset_id] ?? p.target_asset_id } : null,
-		raised_amount: sum(confirmed.map((c) => c.amount)),
-		contributor_count: new Set(confirmed.map((c) => c.sender_address)).size,
-	};
-}
-
-route("GET", "/builder/profile", "user", ({ user }) => ok(profileOf(read(), user!)));
-
-const BIO_MAX = 280;
-
-/** Design "Edit Profile". Same field rules as Add Project; empty optional fields are cleared. */
-route("PATCH", "/builder/profile", "user", ({ user, body }) => {
-	const name = String(body.display_name ?? "").trim();
-	const bio = String(body.bio ?? "").trim();
-	const avatar = String(body.avatar_url ?? "");
-	const email = String(body.contact_email ?? "")
-		.trim()
-		.toLowerCase();
-	const wallet = String(body.wallet_address ?? "")
-		.trim()
-		.toUpperCase();
-	if (name.length < 2 || name.length > 60)
-		throw new HttpError(422, "Use 2–60 characters for your name.", { field: "display_name" });
-	if (bio.length > BIO_MAX) throw new HttpError(422, `Keep it under ${BIO_MAX} characters.`, { field: "bio" });
-	if (avatar && (!LOGO.test(avatar) || avatar.length > MAX_LOGO_CHARS))
-		throw new HttpError(422, "Use a JPG, PNG, SVG or GIF image under 1 MB.", { field: "avatar_url" });
-	if (!EMAIL.test(email)) throw new HttpError(422, "Enter a valid email address.", { field: "contact_email" });
-	if (wallet && !STELLAR_ADDRESS.test(wallet))
-		throw new HttpError(422, "Enter a Stellar address: 56 characters starting with G.", { field: "wallet_address" });
-	const link = (key: string, label: string) => cleanUrl(body[key], label, key)?.url ?? null;
-	const links = {
-		twitter_url: link("twitter_url", "Twitter"),
-		discord_url: link("discord_url", "Discord"),
-		telegram_url: link("telegram_url", "Telegram"),
-		website: link("website", "Website"),
-	};
-
-	update((db) => {
-		const p = db.profiles.find((x) => x.user_id === user!.id);
-		if (!p) throw new HttpError(404, "Profile not found.");
-		Object.assign(p, {
-			display_name: name,
-			bio: bio || null,
-			avatar_url: avatar || null,
-			contact_email: email,
-			wallet_address: wallet || null,
-			...links,
-		});
-		const u = db.users.find((x) => x.id === user!.id);
-		if (u) u.updated_at = iso(Date.now());
-	});
-	return ok(profileOf(read(), user!), "Profile updated");
-});
-
-route("GET", "/builder/projects", "user", ({ user, query }) => {
-	const db = read();
-	const group = (GROUPS as string[]).includes(query.get("group") ?? "") ? (query.get("group") as BuilderProjectGroup) : "all";
-	const q = (query.get("q") ?? "").trim().toLowerCase();
-	const mine = db.projects.filter((p) => p.owner_user_id === user!.id).sort((a, b) => b.updated_at.localeCompare(a.updated_at));
-	const searched = q ? mine.filter((p) => p.title.toLowerCase().includes(q) || p.slug.includes(q)) : mine;
-	const page = paginate(
-		searched.filter((p) => inBuilderGroup(p.status, group)),
-		Number(query.get("page") ?? 1),
-		Number(query.get("limit") ?? 6),
-	);
-	return ok({
-		items: page.items.map((p) => listItem(db, p)),
-		meta: { page: page.page, limit: page.limit, total: page.total, total_pages: page.total_pages },
-		// Tab badges follow the search, so "Pending (2)" means two matches.
-		counts: Object.fromEntries(GROUPS.map((g) => [g, searched.filter((p) => inBuilderGroup(p.status, g)).length])),
-		// Whether the builder has any project at all (design 1's empty state vs "no matches").
-		has_any: mine.length > 0,
-	});
-});
-
-const slugify = (title: string) =>
-	title
-		.toLowerCase()
-		.normalize("NFKD")
-		.replace(/[^\w\s-]/g, "")
-		.trim()
-		.replace(/[\s_-]+/g, "-")
-		.slice(0, 60) || "project";
-
-function cleanUrl(value: unknown, label: string, field: string): ProjectLink | null {
-	const raw = String(value ?? "").trim();
-	if (!raw) return null;
-	try {
-		const url = new URL(raw);
-		if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error();
-		return { label, url: url.toString() };
-	} catch {
-		throw new HttpError(422, `Enter a full link for ${label} (starting with https://).`, { field });
-	}
-}
-
-/** Design "Add Project": one step. Creates the project as a draft and submits it through the state machine. */
-route("POST", "/builder/projects", "user", ({ user, body }) => {
-	const title = String(body.title ?? "").trim();
-	const email = String(body.contact_email ?? "")
-		.trim()
-		.toLowerCase();
-	const wallet = String(body.destination_address ?? "").trim();
-	const logo = String(body.logo_url ?? "");
-	const links = (body.links ?? {}) as Record<string, unknown>;
-
-	if (title.length < 3 || title.length > 80)
-		throw new HttpError(422, "Use 3–80 characters for the project name.", { field: "title" });
-	if (!logo) throw new HttpError(422, "Add a project logo.", { field: "logo_url" });
-	if (!LOGO.test(logo) || logo.length > MAX_LOGO_CHARS)
-		throw new HttpError(422, "Use a JPG, PNG, SVG or GIF logo under 1 MB.", { field: "logo_url" });
-	if (!EMAIL.test(email)) throw new HttpError(422, "Enter a valid email address.", { field: "contact_email" });
-	if (!STELLAR_ADDRESS.test(wallet))
-		throw new HttpError(422, "Enter a Stellar address: 56 characters starting with G.", { field: "destination_address" });
-
-	const projectLinks = [
-		cleanUrl(links.twitter, "Twitter", "links.twitter"),
-		cleanUrl(links.discord, "Discord", "links.discord"),
-		cleanUrl(links.telegram, "Telegram", "links.telegram"),
-		cleanUrl(links.website, "Website", "links.website"),
-	].filter((l): l is ProjectLink => !!l);
-
-	const created = update((db) => {
-		const base = slugify(title);
-		let slug = base;
-		for (let n = 2; db.projects.some((p) => p.slug === slug); n++) slug = `${base}-${n}`;
-		const now = iso(Date.now());
-		const project: Project = {
-			id: uuid(),
-			owner_user_id: user!.id,
-			title,
-			slug,
-			project_type: "new_idea",
-			summary: "",
-			problem: "",
-			solution: "",
-			beneficiaries: "",
-			category_id: null,
-			stage: null,
-			cover_image_url: null,
-			logo_url: logo,
-			contact_email: email,
-			team: [],
-			links: projectLinks,
-			fundraising: true,
-			target_amount: null,
-			target_asset_id: "xlm",
-			destination_address: wallet,
-			status: transition("draft", "submitted", "builder"),
-			visibility: "unpublished",
-			featured: false,
-			submitted_at: now,
-			approved_at: null,
-			ends_at: null,
-			created_at: now,
-			updated_at: now,
-		};
-		db.projects.push(project);
-		db.revisions.push({
-			id: uuid(),
-			project_id: project.id,
-			revision_number: 1,
-			submitted_payload: { title, contact_email: email, destination_address: wallet, links: projectLinks },
-			created_by: user!.id,
-			created_at: now,
-		});
-		db.notifications.push({
-			id: uuid(),
-			user_id: user!.id,
-			wallet_address: null,
-			broadcast: false,
-			type: "submission_received",
-			category: "projects",
-			title: `We received ${title} for review`,
-			action: { label: "View dashboard", href: "/builder/dashboard?tab=pending" },
-			payload: { project_id: project.id },
-			read_by: [],
-			created_at: now,
-		});
-		return listItem(db, project);
-	});
-	return ok(created, "Project submitted for review", 201);
-});
-
-// ------------------------------------------------------------------ one project (status page, edit, preview)
-
-/** Owner only (FR-PROJ-06): someone else's project is a 403, not a 404 that leaks nothing either way. */
-function ownProject(db: MockDb, userId: string, id: string) {
-	const p = db.projects.find((x) => x.id === id);
-	if (!p) throw new HttpError(404, "Project not found.");
-	if (p.owner_user_id !== userId) throw new HttpError(403, "This isn’t your project.");
+function own(db: MockDb, ctx: Ctx) {
+	const p = db.projects.find((x) => x.id === ctx.params.id);
+	if (!p || p.ownerId !== ctx.user!.id) throw new HttpError(404, "Project not found");
 	return p;
 }
 
-route("GET", "/builder/projects/:id", "user", ({ user, params }) => {
-	const db = read();
-	const p = ownProject(db, user!.id, params.id!);
-	const confirmed = db.contributions.filter((c) => c.project_id === p.id && countsTowardTotal(c.status));
-	return ok({
-		...p,
-		category: db.categories.find((c) => c.id === p.category_id) ?? null,
-		target_asset: p.target_asset_id ? { id: p.target_asset_id, code: ASSET_CODE[p.target_asset_id] ?? p.target_asset_id } : null,
-		raised_amount: sum(confirmed.map((c) => c.amount)),
-		contributor_count: new Set(confirmed.map((c) => c.sender_address)).size,
-		// The builder sees the reason, never the admin's internal note (FR-REV-03).
-		reviews: db.reviews
-			.filter((r) => r.project_id === p.id)
-			.sort((a, b) => b.created_at.localeCompare(a.created_at))
-			.map((r) => ({ id: r.id, decision: r.decision, reason: r.reason, created_at: r.created_at })),
-		revisions: db.revisions
-			.filter((r) => r.project_id === p.id)
-			.map((r) => ({ id: r.id, revision_number: r.revision_number, created_at: r.created_at })),
-		suggestion_count: db.suggestions.filter((s) => s.project_id === p.id && s.status === "published").length,
-		editable: p.status === "draft" || p.status === "changes_requested",
+/** The rules on every save (API wording), then applies the fields. */
+function applyFields(db: MockDb, p: ProjectRec, body: Record<string, unknown>) {
+	const extra = Object.keys(body).filter((k) => !FIELDS.includes(k));
+	if (extra.length) throw invalid(extra.map((k) => `property ${k} should not exist`));
+	const problems: string[] = [];
+	const text = (k: string) => (body[k] === null || body[k] === undefined ? null : String(body[k]).trim() || null);
+	if ("type" in body && !TYPES.includes(body.type as ProjectType)) problems.push("type must be one of: new_idea, existing_project");
+	if ("title" in body) lengthRule("title", text("title"), 3, 120, problems);
+	for (const [k, max] of [
+		["summary", 280],
+		["problem", 5000],
+		["solution", 5000],
+		["beneficiaries", 2000],
+	] as const)
+		if (k in body && (text(k)?.length ?? 0) > max) problems.push(`${k} must be shorter than or equal to ${max} characters`);
+	if ("stage" in body && body.stage !== null && !STAGES.includes(body.stage as ProjectStage))
+		problems.push("stage must be one of: idea, prototype, mvp, launched, scaling");
+	if ("categoryId" in body && body.categoryId && !db.categories.some((c) => c.id === body.categoryId && c.isActive))
+		problems.push("categoryId must be an active category");
+	if ("teamMembers" in body) {
+		const t = body.teamMembers as { name?: string; role?: string }[];
+		if (!Array.isArray(t)) problems.push("teamMembers must be an array");
+		else if (t.length > 20) problems.push("teamMembers must contain no more than 20 elements");
+		else if (t.some((m) => !m?.name?.trim() || !m?.role?.trim())) problems.push("teamMembers each need a name and a role");
+	}
+	if ("links" in body) {
+		const l = body.links as { label?: string; url?: string }[];
+		if (!Array.isArray(l)) problems.push("links must be an array");
+		else if (l.length > 10) problems.push("links must contain no more than 10 elements");
+		else if (l.some((x) => !x?.label?.trim() || !/^https:\/\/\S+\.\S+/.test(x?.url ?? ""))) problems.push("links each need a label and an https URL");
+	}
+	if ("targetAmount" in body && body.targetAmount && !isValidAmount(String(body.targetAmount)))
+		problems.push("targetAmount must be a decimal above 0 with up to 7 decimals");
+	if ("targetAssetId" in body && body.targetAssetId && !assetById(String(body.targetAssetId))) problems.push("targetAssetId must be XLM or USDC");
+	if ("acceptedAssetIds" in body && (!Array.isArray(body.acceptedAssetIds) || (body.acceptedAssetIds as string[]).some((a) => !assetById(a))))
+		problems.push("acceptedAssetIds must only contain XLM or USDC");
+	if ("payoutAddress" in body && body.payoutAddress && !isAddress(body.payoutAddress)) problems.push("payoutAddress must be a Stellar public key");
+	if (problems.length) throw invalid(problems);
+
+	if ("type" in body) p.type = body.type as ProjectType;
+	if ("title" in body) p.title = text("title")!;
+	for (const k of ["summary", "problem", "solution", "beneficiaries"] as const) if (k in body) p[k] = text(k);
+	if ("categoryId" in body) p.categoryId = text("categoryId");
+	if ("stage" in body) p.stage = (body.stage as ProjectStage) ?? null;
+	if ("teamMembers" in body) p.teamMembers = (body.teamMembers as { name: string; role: string }[]).map((m) => ({ name: m.name.trim(), role: m.role.trim() }));
+	if ("links" in body) p.links = (body.links as { label: string; url: string }[]).map((x) => ({ label: x.label.trim(), url: x.url.trim() }));
+	if ("fundraisingEnabled" in body) p.fundraisingEnabled = !!body.fundraisingEnabled;
+	if ("targetAmount" in body) p.targetAmount = text("targetAmount");
+	if ("targetAssetId" in body) p.targetAssetId = text("targetAssetId");
+	if ("acceptedAssetIds" in body) p.acceptedAssetIds = [...new Set(body.acceptedAssetIds as string[])];
+	if ("payoutAddress" in body) p.payoutAddress = text("payoutAddress");
+	p.updatedAt = now();
+}
+
+/** What a submission needs, in form order (the API's 400 details). */
+export function submitProblems(p: ProjectRec) {
+	const out: string[] = [];
+	lengthRule("title", p.title, 3, 120, out);
+	lengthRule("summary", p.summary, 20, 280, out);
+	lengthRule("problem", p.problem, 50, 5000, out);
+	lengthRule("solution", p.solution, 50, 5000, out);
+	if (!p.categoryId) out.push("categoryId must be set");
+	if (!p.stage) out.push("stage must be set");
+	lengthRule("beneficiaries", p.beneficiaries, 10, 2000, out);
+	if (!p.teamMembers.length) out.push("teamMembers must list at least one person");
+	if (p.fundraisingEnabled) {
+		if (!p.targetAmount) out.push("targetAmount is required when fundraising");
+		if (!p.targetAssetId) out.push("targetAssetId is required when fundraising");
+		if (!p.acceptedAssetIds.length) out.push("acceptedAssetIds must include at least one asset");
+		else if (p.targetAssetId && !p.acceptedAssetIds.includes(p.targetAssetId)) out.push("acceptedAssetIds must include targetAssetId");
+		if (!p.payoutAddress) out.push("payoutAddress is required when fundraising");
+	}
+	return out;
+}
+
+route("POST", "/builder/projects", "builder", ({ user, body }) => {
+	const problems: string[] = [];
+	if (!TYPES.includes(body.type as ProjectType)) problems.push("type must be one of: new_idea, existing_project");
+	if (typeof body.title !== "string") problems.push("title must be a string");
+	if (problems.length) throw invalid(problems);
+	return update((db) => {
+		const t = now();
+		const p: ProjectRec = {
+			id: uuid(),
+			ownerId: user!.id,
+			type: body.type as ProjectType,
+			status: "draft",
+			title: "",
+			slug: null,
+			summary: null,
+			problem: null,
+			solution: null,
+			categoryId: null,
+			stage: null,
+			beneficiaries: null,
+			teamMembers: [],
+			links: [],
+			coverImageUrl: null,
+			fundraisingEnabled: false,
+			targetAmount: null,
+			targetAssetId: null,
+			acceptedAssetIds: [],
+			payoutAddress: null,
+			published: false,
+			featured: false,
+			revision: 0,
+			submittedAt: null,
+			decidedAt: null,
+			publishedAt: null,
+			createdAt: t,
+			updatedAt: t,
+		};
+		applyFields(db, p, body);
+		db.projects.push(p);
+		event(db, "project_draft_created", { projectId: p.id });
+		return ok(projectDto(db, p), "Project created", 201);
 	});
 });
 
-const STAGES = ["idea", "prototype", "mvp", "live", "scaling"];
+route("GET", "/builder/projects", "builder", ({ user, query }) => {
+	const db = read();
+	const status = query.get("status");
+	const list = db.projects
+		.filter((p) => p.ownerId === user!.id && (!status || p.status === status))
+		.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+		.map((p) => projectDto(db, p));
+	return ok(page(list, query), "Projects retrieved");
+});
 
-/** Full edit (only while draft / changes requested). Same field rules as creation, plus the PRD §6.2 details. */
-route("PATCH", "/builder/projects/:id", "user", ({ user, params, body }) => {
-	const fieldErr = (field: string, message: string) => new HttpError(422, message, { field });
-	const text = (key: string, min: number, max: number, label: string) => {
-		const v = String(body[key] ?? "").trim();
-		if (v.length && (v.length < min || v.length > max)) throw fieldErr(key, `Use ${min}–${max} characters for ${label}.`);
-		return v;
-	};
-	const title = String(body.title ?? "").trim();
-	if (title.length < 3 || title.length > 80) throw fieldErr("title", "Use 3–80 characters for the project name.");
-	const summary = text("summary", 20, 280, "the summary");
-	const problem = text("problem", 20, 2000, "the problem");
-	const solution = text("solution", 20, 2000, "the solution");
-	const beneficiaries = text("beneficiaries", 5, 500, "who benefits");
-	const email = String(body.contact_email ?? "")
-		.trim()
-		.toLowerCase();
-	if (!EMAIL.test(email)) throw fieldErr("contact_email", "Enter a valid email address.");
-	const wallet = String(body.destination_address ?? "")
-		.trim()
-		.toUpperCase();
-	if (!STELLAR_ADDRESS.test(wallet))
-		throw fieldErr("destination_address", "Enter a Stellar address: 56 characters starting with G.");
-	const logo = String(body.logo_url ?? "");
-	if (logo && (!LOGO.test(logo) || logo.length > MAX_LOGO_CHARS))
-		throw fieldErr("logo_url", "Use a JPG, PNG, SVG or GIF logo under 1 MB.");
-	const stage = body.stage ? String(body.stage) : null;
-	if (stage && !STAGES.includes(stage)) throw fieldErr("stage", "Choose a stage.");
-	const target = String(body.target_amount ?? "").trim();
-	if (target && !/^\d+(\.\d{1,7})?$/.test(target)) throw fieldErr("target_amount", "Enter a number with up to 7 decimals.");
-	const assetId = body.target_asset_id === "usdc" ? "usdc" : "xlm";
-	const links = (body.links ?? {}) as Record<string, unknown>;
-	const projectLinks = [
-		cleanUrl(links.twitter, "Twitter", "links.twitter"),
-		cleanUrl(links.discord, "Discord", "links.discord"),
-		cleanUrl(links.telegram, "Telegram", "links.telegram"),
-		cleanUrl(links.website, "Website", "links.website"),
-	].filter((l): l is ProjectLink => !!l);
+route("GET", "/builder/projects/:id", "builder", (ctx) => {
+	const db = read();
+	return ok(projectDto(db, own(db, ctx)), "Project retrieved");
+});
 
+route("PATCH", "/builder/projects/:id", "builder", (ctx) => {
+	if (!Object.keys(ctx.body).length) throw invalid(["Send at least one field"]);
+	return update((db) => {
+		const p = own(db, ctx);
+		if (p.status !== "draft" && p.status !== "changes_requested") throw new HttpError(409, `Cannot edit a project that is ${p.status}`);
+		applyFields(db, p, ctx.body);
+		return ok(projectDto(db, p), "Project updated");
+	});
+});
+
+route("DELETE", "/builder/projects/:id", "builder", (ctx) => {
+	update((db) => {
+		const p = own(db, ctx);
+		if (p.status !== "draft" || p.revision > 0) throw new HttpError(409, "Only drafts that were never submitted can be deleted");
+		db.projects = db.projects.filter((x) => x.id !== p.id);
+	});
+	return new NoContent();
+});
+
+route("POST", "/builder/projects/:id/submit", "builder", (ctx) =>
+	update((db) => {
+		const p = own(db, ctx);
+		if (p.status !== "draft" && p.status !== "changes_requested") throw new HttpError(409, `Cannot submit a project that is ${p.status}`);
+		const problems = submitProblems(p);
+		if (problems.length) throw invalid(problems);
+		// With fundraising on, the payout account must exist and trust every issued asset (mock: an address ending in
+		// "X" stands in for an unfunded account).
+		if (p.fundraisingEnabled && p.payoutAddress?.endsWith("X"))
+			throw new HttpError(400, "payoutAddress does not exist on the Stellar network yet: fund it with XLM first");
+		const from = p.status;
+		p.status = "submitted";
+		p.revision += 1;
+		p.submittedAt = now();
+		p.updatedAt = now();
+		const { id: _id, ownerId: _o, ...snapshot } = p;
+		db.revisions.push({ projectId: p.id, revision: p.revision, submittedBy: ctx.user!.id, submittedAt: p.submittedAt, snapshot });
+		notifyUser(db, p.ownerId, "project_submitted", `We received ${p.title} for review`, "An admin will review it soon. You’ll be notified of the decision.", p.id);
+		for (const admin of db.users.filter((u) => u.role === "admin"))
+			notifyUser(db, admin.id, "review_requested", `${p.title} is waiting for review`, `Revision ${p.revision}, submitted by ${ctx.user!.name}.`, p.id);
+		audit(db, ctx.user!.id, "project.submit", { type: "project", id: p.id }, { metadata: { from, revision: p.revision } });
+		event(db, "project_submitted", { projectId: p.id });
+		return ok(projectDto(db, p), "Project submitted");
+	}),
+);
+
+route("GET", "/builder/projects/:id/feedback", "builder", (ctx) => {
+	const db = read();
+	const p = own(db, ctx);
 	return ok(
-		update((db) => {
-			const p = ownProject(db, user!.id, params.id!);
-			if (!isBuilderEditable(p.status))
-				throw new HttpError(409, "You can edit a project only while it’s a draft or changes were requested.");
-			const category = body.category_id ? String(body.category_id) : null;
-			if (category && !db.categories.some((c) => c.id === category && c.is_active))
-				throw fieldErr("category_id", "Choose a category.");
-			Object.assign(p, {
-				title,
-				summary,
-				problem,
-				solution,
-				beneficiaries,
-				category_id: category,
-				stage,
-				project_type: body.project_type === "existing_project" ? "existing_project" : "new_idea",
-				logo_url: logo || p.logo_url,
-				contact_email: email,
-				destination_address: wallet,
-				target_amount: target ? `${target}${target.includes(".") ? "" : ".0000000"}` : null,
-				target_asset_id: assetId,
-				links: projectLinks,
-				updated_at: iso(Date.now()),
-			});
-			return { id: p.id };
-		}),
-		"Changes saved",
+		db.reviews
+			.filter((r) => r.projectId === p.id)
+			.sort((a, b) => a.at.localeCompare(b.at))
+			.map((r) => ({ action: r.action, fromStatus: r.fromStatus, toStatus: r.toStatus, reason: r.reason, revision: r.revision, at: r.at })),
+		"Feedback retrieved",
 	);
 });
 
-/** Resubmit after changes (or submit a draft): needs the details an admin reviews (PRD §6.2). */
-route("POST", "/builder/projects/:id/submit", "user", ({ user, params }) =>
-	ok(
-		update((db) => {
-			const p = ownProject(db, user!.id, params.id!);
-			const missing = [
-				!p.summary && "summary",
-				!p.category_id && "category",
-				!p.stage && "stage",
-				!p.destination_address && "Stellar address",
-			].filter(Boolean);
-			if (missing.length)
-				throw new HttpError(422, `Add your project’s ${missing.join(", ")} before submitting.`, { field: "missing" });
-			const now = iso(Date.now());
-			p.status = transition(p.status, "submitted", "builder");
-			p.submitted_at = now;
-			p.updated_at = now;
-			const n = db.revisions.filter((r) => r.project_id === p.id).length + 1;
-			db.revisions.push({
-				id: uuid(),
-				project_id: p.id,
-				revision_number: n,
-				submitted_payload: { title: p.title, summary: p.summary },
-				created_by: user!.id,
-				created_at: now,
-			});
-			db.notifications.push({
-				id: uuid(),
-				user_id: user!.id,
-				wallet_address: null,
-				broadcast: false,
-				type: "submission_received",
-				category: "projects",
-				title: `We received ${p.title} for review`,
-				action: { label: "View status", href: `/builder/projects/${p.id}` },
-				payload: { project_id: p.id },
-				read_by: [],
-				created_at: now,
-			});
-			return { id: p.id, status: p.status };
-		}),
-		"Submitted for review",
-	),
+const readAsDataUrl = (file: Blob) =>
+	new Promise<string>((resolve, reject) => {
+		const r = new FileReader();
+		r.onload = () => resolve(String(r.result));
+		r.onerror = () => reject(new HttpError(415, "Could not read the image"));
+		r.readAsDataURL(file);
+	});
+
+route("PUT", "/builder/projects/:id/cover", "builder", async (ctx) => {
+	const file = ctx.body.cover;
+	if (!(file instanceof Blob)) throw invalid(["cover file is required"]);
+	if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) throw new HttpError(415, "Cover must be a JPEG, PNG or WebP image");
+	if (file.size > 5 * 1024 * 1024) throw new HttpError(413, "Cover must be 5 MB or smaller");
+	const url = await readAsDataUrl(file);
+	return update((db) => {
+		const p = own(db, ctx);
+		if (p.status !== "draft" && p.status !== "changes_requested") throw new HttpError(409, `Cannot edit a project that is ${p.status}`);
+		p.coverImageUrl = url;
+		p.updatedAt = now();
+		return ok(projectDto(db, p), "Cover uploaded");
+	});
+});
+
+route("DELETE", "/builder/projects/:id/cover", "builder", (ctx) =>
+	update((db) => {
+		const p = own(db, ctx);
+		p.coverImageUrl = null;
+		p.updatedAt = now();
+		return ok(projectDto(db, p), "Cover removed");
+	}),
 );
 
-route("GET", "/builder/projects/:id/suggestions", "user", ({ user, params }) => {
+route("GET", "/builder/projects/:id/contributions", "builder", (ctx) => {
 	const db = read();
-	const p = ownProject(db, user!.id, params.id!);
-	return ok(
-		db.suggestions
-			.filter((s) => s.project_id === p.id && s.status === "published")
-			.sort((a, b) => b.created_at.localeCompare(a.created_at))
-			.map((s) => ({
-				id: s.id,
-				type: s.type,
-				title: s.title,
-				body: s.body,
-				link: s.link,
-				wallet_address: s.wallet_address,
-				created_at: s.created_at,
-			})),
-	);
+	const p = own(db, ctx);
+	const list = db.contributions
+		.filter((c) => c.projectId === p.id && c.status === "confirmed")
+		.sort((a, b) => (b.confirmedAt ?? "").localeCompare(a.confirmedAt ?? ""))
+		.map((c) => contributionDto(db, c));
+	return ok(page(list, ctx.query), "Contributions retrieved");
+});
+
+/** Views per day, contributions started/confirmed, suggestions received/published (default: the last 30 days). */
+export function insights(db: MockDb, projectId: string, query: URLSearchParams): ProjectInsights {
+	const to = query.get("to") ? new Date(query.get("to")!) : new Date(Date.now() + 86_400_000);
+	const from = query.get("from") ? new Date(query.get("from")!) : new Date(to.getTime() - 30 * 86_400_000);
+	const inRange = (iso: string) => iso >= from.toISOString() && iso < to.toISOString();
+	const views = db.events.filter((e) => e.name === "project_viewed" && e.projectId === projectId && inRange(e.at));
+	const days: Record<string, number> = {};
+	for (let t = from.getTime(); t < to.getTime(); t += 86_400_000) days[new Date(t).toISOString().slice(0, 10)] = 0;
+	for (const v of views) days[v.at.slice(0, 10)] = (days[v.at.slice(0, 10)] ?? 0) + 1;
+	const contribs = db.contributions.filter((c) => c.projectId === projectId && inRange(c.createdAt));
+	const sugg = db.suggestions.filter((s) => s.projectId === projectId && inRange(s.createdAt));
+	return {
+		projectId,
+		from: from.toISOString(),
+		to: to.toISOString(),
+		views: views.length,
+		viewsByDay: Object.entries(days).map(([date, n]) => ({ date, views: n })),
+		contributionsStarted: contribs.length,
+		contributionsConfirmed: contribs.filter((c) => c.status === "confirmed").length,
+		suggestionsReceived: sugg.length,
+		suggestionsPublished: sugg.filter((s) => s.status === "published").length,
+	};
+}
+
+route("GET", "/builder/projects/:id/insights", "builder", (ctx) => {
+	const db = read();
+	return ok(insights(db, own(db, ctx).id, ctx.query), "Insights");
 });

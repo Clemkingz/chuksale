@@ -135,6 +135,9 @@ export function EditProjectForm({ id }: { id: string }) {
 }
 
 function Form({ project: p }: { project: Project }) {
+	// react-hook-form + React Compiler: memoized register() props stop tracking fields after form.reset(). Opt out.
+	"use no memo";
+
 	const router = useRouter();
 	const categories = useCategories();
 	const network = useNetwork();
@@ -188,7 +191,13 @@ function Form({ project: p }: { project: Project }) {
 		window.scrollTo({ top: 0, behavior: "smooth" });
 	};
 
-	const saveOnly = form.handleSubmit((v) => {
+	// Errors the API set (e.g. on the whole team list) would otherwise block every later save: clear them first.
+	const fresh = (run: () => Promise<void>) => () => {
+		form.clearErrors();
+		void run();
+	};
+
+	const saveOnly = fresh(form.handleSubmit((v) => {
 		setProblems([]);
 		save.mutate(toInput(v), {
 			onSuccess: (next) => {
@@ -197,13 +206,12 @@ function Form({ project: p }: { project: Project }) {
 			},
 			onError: showProblems,
 		});
-	});
+	}));
 
-	const saveAndSubmit = form.handleSubmit((v) => {
+	const saveAndSubmit = fresh(form.handleSubmit((v) => {
 		setProblems([]);
 		save.mutate(toInput(v), {
-			onSuccess: (next) => {
-				form.reset(toValues(next));
+			onSuccess: () => {
 				submit.mutate(undefined, {
 					onSuccess: () => {
 						notify.success("Submitted for review");
@@ -214,7 +222,7 @@ function Form({ project: p }: { project: Project }) {
 			},
 			onError: showProblems,
 		});
-	});
+	}));
 
 	const toggleAsset = (id: string) =>
 		form.setValue("acceptedAssetIds", accepted.includes(id) ? accepted.filter((a) => a !== id) : [...accepted, id], {
@@ -259,7 +267,14 @@ function Form({ project: p }: { project: Project }) {
 				</div>
 			)}
 
-			<form noValidate onSubmit={saveAndSubmit} className="mt-7 flex flex-col gap-8">
+			<form
+				noValidate
+				onSubmit={(e) => {
+					e.preventDefault();
+					saveAndSubmit();
+				}}
+				className="mt-7 flex flex-col gap-8"
+			>
 				<Group title="Basics">
 					<TextField label="Project Name" maxLength={120} error={errors.title?.message} {...form.register("title")} />
 					<fieldset>

@@ -32,6 +32,9 @@ const resetSchema = z.object({
 });
 
 export function SignInView() {
+	// react-hook-form + React Compiler: memoized register() props stop tracking fields after form.reset(). Opt out.
+	"use no memo";
+
 	const router = useRouter();
 	const next = useSearchParams().get("next");
 	const login = useAdminLogin();
@@ -106,7 +109,7 @@ export function SignInView() {
 							{USE_MOCK_API && (
 								<div className="mt-6 rounded-xl border border-dashed border-primary-500/40 p-4">
 									<p className="text-xs tracking-wide text-primary-300 uppercase">Test mode</p>
-									<p className="mt-1 text-sm leading-6 text-white/65">Any email and password work here. Or skip it:</p>
+									<p className="mt-1 text-sm leading-6 text-white/65">Mock data: use the demo admin, or skip signing in.</p>
 									<Button
 										type="button"
 										variant="outline"

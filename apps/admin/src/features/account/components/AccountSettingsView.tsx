@@ -137,6 +137,9 @@ const passwordSchema = z
 	.refine((v) => v.newPassword === v.confirm, { path: ["confirm"], message: "Passwords don’t match." });
 
 function Security() {
+	// react-hook-form + React Compiler: memoized register() props stop tracking fields after form.reset(). Opt out.
+	"use no memo";
+
 	const router = useRouter();
 	const change = useChangePassword();
 	const everywhere = useSignOutEverywhere();

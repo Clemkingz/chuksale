@@ -57,6 +57,9 @@ const STATUS_TONE: Record<SuggestionStatus, string> = {
 };
 
 export function SuggestView({ slug }: { slug: string }) {
+	// react-hook-form + React Compiler: memoized register() props stop tracking fields after form.reset(). Opt out.
+	"use no memo";
+
 	const project = useProject(slug);
 	const create = useCreateSuggestion(slug);
 	const requireWallet = useRequireWallet();
