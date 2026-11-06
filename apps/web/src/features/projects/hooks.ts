@@ -1,6 +1,6 @@
 "use client";
 
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import type {
 	Page,
 	ProjectStage,
@@ -10,6 +10,7 @@ import type {
 	PublicProject,
 	PublicProjectCard,
 	PublicProjectsQuery,
+	PublicProjectUpdate,
 	PublicSuggestion,
 	SuggestionType,
 } from "@repo/domain/types";
@@ -109,7 +110,25 @@ export function useProjectSuggestions(slug: string, type?: SuggestionType) {
 	return useQuery({
 		queryKey: ["projects", "suggestions", slug, type ?? "all"],
 		queryFn: async () =>
-			unwrap<Page<PublicSuggestion>>(await api.get(`/projects/${slug}/suggestions`, { params: cleanParams({ limit: 20, type }) })),
+			unwrap<Page<PublicSuggestion>>(
+				await api.get(`/projects/${slug}/suggestions`, { params: cleanParams({ limit: 20, type }) }),
+			),
+	});
+}
+
+export const PROJECT_UPDATES_PAGE = 10;
+
+/** Published updates, newest first ("Load older"). Image links expire after about an hour, so they refetch. */
+export function useProjectUpdates(slug: string) {
+	return useInfiniteQuery({
+		queryKey: ["projects", "updates", slug],
+		queryFn: async ({ pageParam }) =>
+			unwrap<Page<PublicProjectUpdate>>(
+				await api.get(`/projects/${slug}/updates`, { params: { limit: PROJECT_UPDATES_PAGE, offset: pageParam } }),
+			),
+		initialPageParam: 0,
+		getNextPageParam: (last, all) => (last.paginationMeta.nextPage ? all.length * PROJECT_UPDATES_PAGE : undefined),
+		staleTime: 10 * 60_000,
 	});
 }
 

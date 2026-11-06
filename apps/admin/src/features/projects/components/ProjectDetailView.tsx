@@ -26,6 +26,7 @@ import {
 	useSetCategory,
 } from "@/features/projects/hooks";
 import { ProjectActions } from "@/features/projects/components/ProjectActions";
+import { ProjectUpdatesPanel } from "@/features/projects/components/ProjectUpdatesPanel";
 import { RejectionReasonDialog } from "@/features/projects/components/RejectionDialogs";
 
 /**
@@ -61,13 +62,21 @@ export function ProjectDetailView({ id }: { id: string }) {
 							}
 						/>
 					) : (
-						<ErrorState message={errorMessage(project.error)} onRetry={() => void project.refetch()} retrying={project.isFetching} />
+						<ErrorState
+							message={errorMessage(project.error)}
+							onRetry={() => void project.refetch()}
+							retrying={project.isFetching}
+						/>
 					)}
 				</div>
 			</div>
 		);
 
-	const latest = p ? [...p.reviews].reverse().find((r) => r.reason && (r.action === "reject" || r.action === "request_changes" || r.action === "archive")) : undefined;
+	const latest = p
+		? [...p.reviews]
+				.reverse()
+				.find((r) => r.reason && (r.action === "reject" || r.action === "request_changes" || r.action === "archive"))
+		: undefined;
 
 	return (
 		<div>
@@ -88,7 +97,11 @@ export function ProjectDetailView({ id }: { id: string }) {
 				<div className="-mt-11 flex flex-col gap-6 sm:-mt-14 lg:flex-row lg:items-end lg:justify-between">
 					<div className="min-w-0 flex-1">
 						{p ? (
-							<Avatar name={p.title} className="animate-pop size-[88px] text-2xl ring-4 ring-surface-900 sm:size-[112px] sm:text-3xl" />
+							<Avatar
+								name={p.title}
+								src={p.logoUrl}
+								className="animate-pop size-[88px] text-2xl ring-4 ring-surface-900 sm:size-[112px] sm:text-3xl"
+							/>
 						) : (
 							<span className="skeleton-shimmer block size-[88px] rounded-full ring-4 ring-surface-900 sm:size-[112px]" />
 						)}
@@ -106,9 +119,13 @@ export function ProjectDetailView({ id }: { id: string }) {
 							<h1 className="animate-rise font-display text-[26px] leading-tight font-bold md:text-[32px]">{p.title}</h1>
 							<StatusPill status={p.status} className="animate-rise text-sm [--i:1] md:text-[15px]" />
 							{p.status === "approved" && (
-								<span className="rounded-full bg-white/[0.06] px-2.5 py-0.5 text-xs text-white/70">{p.published ? "Listed" : "Not listed"}</span>
+								<span className="rounded-full bg-white/[0.06] px-2.5 py-0.5 text-xs text-white/70">
+									{p.published ? "Listed" : "Not listed"}
+								</span>
 							)}
-							{p.featured && <span className="rounded-full bg-primary-500/15 px-2.5 py-0.5 text-xs text-primary-200">Featured</span>}
+							{p.featured && (
+								<span className="rounded-full bg-primary-500/15 px-2.5 py-0.5 text-xs text-primary-200">Featured</span>
+							)}
 							<span className="text-xs text-white/45">Revision {p.revision}</span>
 						</div>
 
@@ -117,15 +134,24 @@ export function ProjectDetailView({ id }: { id: string }) {
 								role="note"
 								className={cn(
 									"animate-pop mt-4 flex flex-col gap-3 rounded-2xl border px-5 py-4 sm:flex-row sm:items-center sm:justify-between",
-									p.status === "changes_requested" ? "border-warning-400/30 bg-warning-400/[0.06]" : "border-error-400/30 bg-error-400/[0.06]",
+									p.status === "changes_requested"
+										? "border-warning-400/30 bg-warning-400/[0.06]"
+										: "border-error-400/30 bg-error-400/[0.06]",
 								)}
 							>
 								<div className="min-w-0">
-									<p className={cn("text-sm font-medium", p.status === "changes_requested" ? "text-warning-200" : "text-error-200")}>
+									<p
+										className={cn(
+											"text-sm font-medium",
+											p.status === "changes_requested" ? "text-warning-200" : "text-error-200",
+										)}
+									>
 										{PROJECT_ACTION_LABEL[latest?.action ?? "reject"]}
 										{latest ? ` · ${timeAgo(latest.at)}` : ""}
 									</p>
-									<p className="mt-1 line-clamp-2 text-[15px] leading-6 break-words text-white/85">{latest?.reason ?? "No reason recorded."}</p>
+									<p className="mt-1 line-clamp-2 text-[15px] leading-6 break-words text-white/85">
+										{latest?.reason ?? "No reason recorded."}
+									</p>
 								</div>
 								<Button variant="outline" size="sm" className="h-10 w-auto shrink-0 px-4" onClick={() => setShowReason(true)}>
 									View details
@@ -208,7 +234,10 @@ export function ProjectDetailView({ id }: { id: string }) {
 								) : (
 									<dl className="mt-3 flex flex-col gap-3 text-[15px]">
 										<Row label="Accepts">{p.acceptedAssets.map((a) => a.code).join(", ") || "—"}</Row>
-										<Row label="Target">{p.targetAmount ? `${formatAmount(p.targetAmount)} ${p.targetAsset?.code ?? ""}` : "No target"}</Row>
+										<Row label="Target">
+											{p.targetAmount ? `${formatAmount(p.targetAmount)} ${p.targetAsset?.code ?? ""}` : "No target"}
+										</Row>
+										<Row label="Deadline">{p.fundingEndsAt ? fullDate(p.fundingEndsAt) : "None"}</Row>
 										<Row label="Payout wallet">
 											{p.payoutAddress ? (
 												<a
@@ -234,7 +263,10 @@ export function ProjectDetailView({ id }: { id: string }) {
 												<Mini label="Views" value={insights.data.views} />
 												<Mini label="Contributions started" value={insights.data.contributionsStarted} />
 												<Mini label="Confirmed" value={insights.data.contributionsConfirmed} />
-												<Mini label="Suggestions" value={`${insights.data.suggestionsPublished}/${insights.data.suggestionsReceived}`} />
+												<Mini
+													label="Suggestions"
+													value={`${insights.data.suggestionsPublished}/${insights.data.suggestionsReceived}`}
+												/>
 											</ul>
 										) : (
 											<span className="skeleton-shimmer mt-2 block h-16 rounded-lg" aria-hidden />
@@ -288,7 +320,10 @@ export function ProjectDetailView({ id }: { id: string }) {
 										{contributions.data.result.map((c, i) => (
 											<tr key={c.id} data-reveal="up" style={d(i)} className="border-t border-white/10 hover:bg-white/[0.025]">
 												<td className="px-5 py-4 md:px-7">
-													<Link href={routes.contributor(c.contributorAddress)} className="flex items-center gap-3 hover:text-primary-300">
+													<Link
+														href={routes.contributor(c.contributorAddress)}
+														className="flex items-center gap-3 hover:text-primary-300"
+													>
 														<WalletDot address={c.contributorAddress} className="size-7 ring-0" />
 														<span className="font-mono text-[15px]" title={c.contributorAddress}>
 															{shortKey(c.contributorAddress, 10, 8)}
@@ -327,6 +362,8 @@ export function ProjectDetailView({ id }: { id: string }) {
 					/>
 				)}
 
+				{p && (p.status === "approved" || p.status === "archived") && <ProjectUpdatesPanel projectId={p.id} />}
+
 				{p && <Revisions id={p.id} />}
 
 				{p && p.reviews.length > 0 && (
@@ -342,7 +379,9 @@ export function ProjectDetailView({ id }: { id: string }) {
 										{r.revision} · <span title={fullDate(r.at)}>{timeAgo(r.at)}</span>
 									</p>
 									{r.reason && <p className="mt-1.5 text-[15px] leading-6 whitespace-pre-line">Builder sees: {r.reason}</p>}
-									{r.internalNote && <p className="mt-1 text-sm leading-6 whitespace-pre-line text-white/55">Internal: {r.internalNote}</p>}
+									{r.internalNote && (
+										<p className="mt-1 text-sm leading-6 whitespace-pre-line text-white/55">Internal: {r.internalNote}</p>
+									)}
 								</li>
 							))}
 						</ol>

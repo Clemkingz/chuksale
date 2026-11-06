@@ -5,13 +5,15 @@ import { BellRing, CheckCircle2, Clock, Eye } from "lucide-react";
 import { Button } from "@repo/ui/button";
 import { routes } from "@/lib/routes";
 import { useBuilderProject } from "@/features/builder-projects/hooks";
+import { BackLink } from "@/components/BackLink";
 
 /** /builder/projects/[id]/submitted (PRD §6.2 step 8): confirmation and what happens next. */
 export function SubmittedView({ id }: { id: string }) {
 	const q = useBuilderProject(id);
 	return (
-		<div className="app-container max-w-[640px] py-14 md:py-20">
-			<div className="flex flex-col items-center text-center">
+		<div className="app-container max-w-[640px] py-8 md:py-12">
+			<BackLink href={routes.builderProject(id)} label="Project status" />
+			<div className="mt-6 flex flex-col items-center text-center md:mt-8">
 				<span className="animate-pop flex size-20 items-center justify-center rounded-full bg-success-400/15 text-success-200">
 					<CheckCircle2 className="size-10" aria-hidden />
 				</span>

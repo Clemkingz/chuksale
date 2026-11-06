@@ -7,6 +7,8 @@ import { hex, uuid } from "../util";
 import {
 	NETWORK,
 	adminContributionDto,
+	fundingEnded,
+	notifyWallet,
 	assetById,
 	audit,
 	contributionDto,
@@ -35,7 +37,12 @@ route("POST", "/wallet-auth/challenge", "public", ({ body }) => {
 		const expiresAt = new Date(Date.now() + 5 * 60_000).toISOString();
 		db.challenges.push({ nonce, address: body.address as string, expiresAt });
 		return ok(
-			{ transaction: `mock-challenge:${nonce}`, networkPassphrase: NETWORK.networkPassphrase, homeDomain: "chucksales.mock", expiresAt },
+			{
+				transaction: `mock-challenge:${nonce}`,
+				networkPassphrase: NETWORK.networkPassphrase,
+				homeDomain: "chucksales.mock",
+				expiresAt,
+			},
 			"Challenge issued",
 		);
 	});
@@ -71,7 +78,15 @@ route("POST", "/wallet-auth/verify", "public", ({ body }) =>
 
 route("GET", "/wallet-auth/session", "wallet", ({ wallet }) => {
 	const s = read().walletSessions.find((w) => w.address === wallet)!;
-	return ok({ address: wallet, shortAddress: shortAddress(wallet!), networkPassphrase: NETWORK.networkPassphrase, expiresAt: s.expiresAt }, "Wallet session");
+	return ok(
+		{
+			address: wallet,
+			shortAddress: shortAddress(wallet!),
+			networkPassphrase: NETWORK.networkPassphrase,
+			expiresAt: s.expiresAt,
+		},
+		"Wallet session",
+	);
 });
 
 route("POST", "/wallet-auth/logout", "wallet", ({ wallet }) => {
@@ -96,7 +111,11 @@ function balance(db: MockDb, address: string, assetId: string) {
 	const asset = assetById(assetId)!;
 	if (!asset.native && !usdcTrusted) return null;
 	const start = asset.native ? "9999.9999900" : "500.0000000";
-	const spent = sum(db.contributions.filter((c) => c.contributorAddress === address && c.assetId === assetId && c.status === "confirmed").map((c) => c.amount));
+	const spent = sum(
+		db.contributions
+			.filter((c) => c.contributorAddress === address && c.assetId === assetId && c.status === "confirmed")
+			.map((c) => c.amount),
+	);
 	return subtract(start, spent);
 }
 
@@ -120,6 +139,7 @@ route("POST", "/projects/:slug/contributions", "wallet", ({ params, body, wallet
 		const p = db.projects.find((x) => x.slug === params.slug && isPublic(db, x));
 		if (!p) throw new HttpError(404, "Project not found");
 		if (!p.fundraisingEnabled || !p.payoutAddress) throw new HttpError(409, "This project isn’t accepting contributions");
+		if (fundingEnded(p)) throw new HttpError(409, "Funding for this project has ended");
 		const assetId = body.assetId as string;
 		const asset = assetById(assetId)!;
 		if (!p.acceptedAssetIds.includes(assetId)) throw new HttpError(400, `This project doesn’t accept ${asset.code}`);
@@ -168,12 +188,16 @@ route("POST", "/contributions/:id/submit", "wallet", ({ params, body, wallet }) 
 			expire(c);
 			return ok(contributionDto(db, c), "Contribution expired");
 		}
-		if (body.transaction !== `demo-signed:mock-tx:${c.id}`) throw new HttpError(400, "The signed transaction does not match this contribution");
+		if (body.transaction !== `demo-signed:mock-tx:${c.id}`)
+			throw new HttpError(400, "The signed transaction does not match this contribution");
 		const outcome = getControls().paymentScenario;
 		c.status = "pending";
 		c.submittedAt = now();
 		c.updatedAt = now();
-		c.settle = { outcome: outcome === "failed" ? "failed" : "confirmed", at: Date.now() + (outcome === "delayed" ? 20_000 : 2500) };
+		c.settle = {
+			outcome: outcome === "failed" ? "failed" : "confirmed",
+			at: Date.now() + (outcome === "delayed" ? 20_000 : 2500),
+		};
 		event(db, "contribution_submitted", { projectId: c.projectId, wallet: wallet! });
 		return ok(contributionDto(db, c), "Contribution submitted");
 	}),
@@ -195,6 +219,15 @@ function settle(db: MockDb, c: ContributionRec) {
 		c.failureReason = "Not enough XLM in the wallet for this amount and the network fee";
 		c.resultCodes = ["tx_failed", "op_underfunded"];
 		event(db, "contribution_failed", { projectId: c.projectId });
+		const proj = db.projects.find((x) => x.id === c.projectId);
+		notifyWallet(
+			db,
+			c.contributorAddress,
+			"contribution_failed",
+			`Your contribution to ${proj?.title ?? "a project"} failed`,
+			`${c.failureReason}. No funds moved.`,
+			c.projectId,
+		);
 		return;
 	}
 	const p = db.projects.find((x) => x.id === c.projectId)!;
@@ -206,8 +239,32 @@ function settle(db: MockDb, c: ContributionRec) {
 	c.resultCodes = ["tx_success"];
 	event(db, "contribution_confirmed", { projectId: p.id });
 	const asset = assetById(c.assetId)!;
-	if (first) notifyUser(db, p.ownerId, "first_contribution", `${p.title} received its first contribution`, `${c.amount} ${asset.code} was confirmed on Stellar.`, p.id);
-	if (!before && targetReached(db, p)) notifyUser(db, p.ownerId, "funding_target_reached", `${p.title} reached its target`, `Confirmed contributions reached ${p.targetAmount} ${assetById(p.targetAssetId)?.code}.`, p.id);
+	notifyWallet(
+		db,
+		c.contributorAddress,
+		"contribution_confirmed",
+		`Your contribution to ${p.title} was confirmed`,
+		`${c.amount} ${asset.code} reached the project on Stellar. Thank you for your support.`,
+		p.id,
+	);
+	if (first)
+		notifyUser(
+			db,
+			p.ownerId,
+			"first_contribution",
+			`${p.title} received its first contribution`,
+			`${c.amount} ${asset.code} was confirmed on Stellar.`,
+			p.id,
+		);
+	if (!before && targetReached(db, p))
+		notifyUser(
+			db,
+			p.ownerId,
+			"funding_target_reached",
+			`${p.title} reached its target`,
+			`Confirmed contributions reached ${p.targetAmount} ${assetById(p.targetAssetId)?.code}.`,
+			p.id,
+		);
 }
 
 /** Called before every mock request: settles due Demo payments and expires unsigned ones. */
@@ -245,7 +302,13 @@ route("GET", "/admin/contributions", "admin", ({ query }) => {
 	if (query.get("status")) list = list.filter((c) => c.status === query.get("status"));
 	if (query.get("projectId")) list = list.filter((c) => c.projectId === query.get("projectId"));
 	if (query.get("address")) list = list.filter((c) => c.contributorAddress === query.get("address"));
-	return ok(page(list.map((c) => adminContributionDto(db, c)), query), "Contributions retrieved");
+	return ok(
+		page(
+			list.map((c) => adminContributionDto(db, c)),
+			query,
+		),
+		"Contributions retrieved",
+	);
 });
 
 route("POST", "/admin/contributions/:id/reconcile", "admin", ({ params, user }) =>

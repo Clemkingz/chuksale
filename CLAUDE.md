@@ -46,7 +46,7 @@ Deploy: one Vercel project with Services (`vercel.json`): landing at `/`, web at
   (`XLM`, `USDC:<issuer>`); never add assets together. Assets and explorer come from `GET /stellar/network`.
 - Staging: emails aren't sent (verification/reset codes come from the backend owner); CORS allows only localhost
   :3000–3002 until other origins are added on the backend.
-- Contributors have **no account**: their identity is the signed-in wallet (`features/wallet/store.ts`).
+- Contributors have **no account**: their identity is the signed-in wallet (`features/wallet/store.ts`). Their inbox is `/wallet/notifications` (wallet token); the bell and /notifications show both inboxes.
 
 ## Simulating (mock mode, `NEXT_PUBLIC_API_SOURCE=mock`)
 
@@ -67,6 +67,8 @@ Deploy: one Vercel project with Services (`vercel.json`): landing at `/`, web at
   (`components/States.tsx`) and `errorMessage()` (`lib/api/errors.ts`).
 - Toasts: always `notify.*` (`lib/use-toast.ts`); dark styling in `@repo/ui/sonner`; offset below the header.
 - Wallet: `useRequireWallet()(action)` opens the dialog only when needed and resumes the action after connecting.
+- Back links: `<BackLink href label>` (`components/BackLink.tsx`) at the top of every inner page, to its parent.
+- Images: `<ImageUpload>` (`components/ImageUpload.tsx`) for every upload route (one multipart part, 5 MB).
 - Motion: `animate-page` per route (`template.tsx`), `animate-rise` with `--i` for lists, `animate-pop` for settled
   results, `animate-signal` while waiting on a wallet, `animate-shake` for a wrong code. All off for reduced motion.
 - **Scroll animation on every page (all apps, every new page).** `@repo/ui/scroll-reveal` is mounted in each root

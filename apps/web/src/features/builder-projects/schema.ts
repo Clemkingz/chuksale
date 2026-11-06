@@ -43,10 +43,17 @@ export const projectSchema = z
 			)
 			.max(10, "Up to 10 links."),
 		fundraisingEnabled: z.boolean(),
-		targetAmount: z.string().trim().refine((v) => !v || isValidAmount(v), "Use a number above 0, with up to 7 decimals."),
+		targetAmount: z
+			.string()
+			.trim()
+			.refine((v) => !v || isValidAmount(v), "Use a number above 0, with up to 7 decimals."),
 		targetAssetId: z.string(),
 		acceptedAssetIds: z.array(z.string()),
 		payoutAddress: stellarAddress(false),
+		/** YYYY-MM-DD (the deadline is the end of that day, local time) or "" for none. */
+		fundingEndsAt: z
+			.string()
+			.refine((v) => !v || endOfDay(v).getTime() > Date.now(), "Pick a date in the future, or leave it empty."),
 	})
 	.refine((v) => !v.fundraisingEnabled || !v.targetAssetId || v.acceptedAssetIds.includes(v.targetAssetId), {
 		path: ["acceptedAssetIds"],
@@ -54,3 +61,14 @@ export const projectSchema = z
 	});
 
 export type ProjectValues = z.infer<typeof projectSchema>;
+
+/** The funding deadline for a picked day: the end of that day, local time. */
+export const endOfDay = (day: string) => new Date(`${day}T23:59:59`);
+
+/** ISO deadline → the day for a date input (local time). */
+export function dayOf(iso: string | null) {
+	if (!iso) return "";
+	const d = new Date(iso);
+	const pad = (n: number) => String(n).padStart(2, "0");
+	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}

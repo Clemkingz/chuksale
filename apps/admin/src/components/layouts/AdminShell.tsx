@@ -165,7 +165,7 @@ function Me() {
 			href={routes.settings}
 			className="flex min-w-0 items-center gap-3 rounded-full transition-opacity hover:opacity-90 md:gap-4"
 		>
-			<Avatar name={display} className="size-11 text-sm md:size-14 md:text-base" />
+			<Avatar name={display} src={me.data?.avatarUrl} className="size-11 text-sm md:size-14 md:text-base" />
 			<span className="hidden min-w-0 flex-col sm:flex">
 				<span className="truncate font-display text-lg font-bold md:text-xl">{display}</span>
 				<span className="truncate text-sm text-white/85">{me.data?.email ?? " "}</span>

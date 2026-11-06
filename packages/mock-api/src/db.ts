@@ -10,7 +10,7 @@ export type { MockDb } from "./records";
  */
 
 const KEY = "csp-mock-db";
-const VERSION = 9;
+const VERSION = 10;
 
 let memory: MockDb | null = null;
 

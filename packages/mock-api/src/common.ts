@@ -6,6 +6,7 @@ import type {
 	Contribution,
 	Feedback,
 	NotificationType,
+	WalletNotificationType,
 	Page,
 	Project,
 	ProjectOwner,
@@ -81,6 +82,9 @@ const category = (db: MockDb, id: string | null) => {
 export const confirmedFor = (db: MockDb, projectId: string) =>
 	db.contributions.filter((c) => c.projectId === projectId && c.status === "confirmed");
 
+/** The funding deadline has passed: contributions are refused. */
+export const fundingEnded = (p: ProjectRec) => !!p.fundingEndsAt && Date.parse(p.fundingEndsAt) <= Date.now();
+
 export function funding(db: MockDb, p: ProjectRec): PublicFunding | null {
 	if (!p.fundraisingEnabled) return null;
 	const confirmed = confirmedFor(db, p.id);
@@ -94,12 +98,16 @@ export function funding(db: MockDb, p: ProjectRec): PublicFunding | null {
 		targetAmount: p.targetAmount,
 		targetAsset: assetById(p.targetAssetId),
 		acceptedAssets: accepted,
+		endsAt: p.fundingEndsAt,
+		ended: fundingEnded(p),
 	};
 }
 
 export function latestFeedback(db: MockDb, projectId: string): Feedback | null {
 	const r = db.reviews.filter((x) => x.projectId === projectId && x.reason).sort((a, b) => b.at.localeCompare(a.at))[0];
-	return r ? { action: r.action, fromStatus: r.fromStatus, toStatus: r.toStatus, reason: r.reason, revision: r.revision, at: r.at } : null;
+	return r
+		? { action: r.action, fromStatus: r.fromStatus, toStatus: r.toStatus, reason: r.reason, revision: r.revision, at: r.at }
+		: null;
 }
 
 export function projectDto(db: MockDb, p: ProjectRec): Project {
@@ -119,11 +127,13 @@ export function projectDto(db: MockDb, p: ProjectRec): Project {
 		teamMembers: p.teamMembers,
 		links: p.links,
 		coverImageUrl: p.coverImageUrl,
+		logoUrl: p.logoUrl,
 		fundraisingEnabled: p.fundraisingEnabled,
 		targetAmount: p.targetAmount,
 		targetAsset: assetById(p.targetAssetId),
 		acceptedAssets: p.acceptedAssetIds.map(assetById).filter((a): a is StellarAsset => !!a),
 		payoutAddress: p.payoutAddress,
+		fundingEndsAt: p.fundingEndsAt,
 		published: p.published,
 		featured: p.featured,
 		revision: p.revision,
@@ -203,8 +213,13 @@ export function cardDto(db: MockDb, p: ProjectRec): PublicProjectCard {
 		stage: p.stage ?? "idea",
 		category: category(db, p.categoryId) ?? { id: "", name: "Other", slug: "other" },
 		coverImageUrl: p.coverImageUrl,
+		logoUrl: p.logoUrl,
 		featured: p.featured,
-		builder: { displayName: owner?.profile?.displayName ?? null, organizationName: owner?.profile?.organizationName ?? null },
+		builder: {
+			displayName: owner?.profile?.displayName ?? null,
+			organizationName: owner?.profile?.organizationName ?? null,
+			avatarUrl: owner?.avatarUrl ?? null,
+		},
 		fundraisingEnabled: p.fundraisingEnabled,
 		funding: funding(db, p),
 		publishedAt: p.publishedAt ?? p.updatedAt,
@@ -217,11 +232,13 @@ export function publicProjectDto(db: MockDb, p: ProjectRec): PublicProject {
 	return {
 		...card,
 		builder: {
-			displayName: owner?.profile?.displayName ?? null,
-			organizationName: owner?.profile?.organizationName ?? null,
+			...card.builder,
 			bio: owner?.profile?.bio ?? null,
 			websiteUrl: owner?.profile?.websiteUrl ?? null,
 			contactEmail: owner?.profile?.contactEmail ?? null,
+			socialLinks: owner?.profile?.socialLinks ?? [],
+			walletAddress: owner?.profile?.walletAddress ?? null,
+			bannerUrl: owner?.profile?.bannerUrl ?? null,
 		},
 		problem: p.problem ?? "",
 		solution: p.solution ?? "",
@@ -267,6 +284,7 @@ export const meDto = (u: UserRec) => ({
 	email: u.email,
 	role: u.role,
 	name: u.name,
+	avatarUrl: u.avatarUrl,
 	profile: u.role === "builder" ? u.profile : null,
 	createdAt: u.createdAt,
 });
@@ -278,7 +296,11 @@ export function audit(
 	actorId: string | null,
 	action: string,
 	resource: { type: string; id: string } | null,
-	extra: { metadata?: Record<string, unknown>; before?: Record<string, unknown> | null; after?: Record<string, unknown> | null } = {},
+	extra: {
+		metadata?: Record<string, unknown>;
+		before?: Record<string, unknown> | null;
+		after?: Record<string, unknown> | null;
+	} = {},
 ) {
 	db.audit.unshift({
 		id: (db.audit[0]?.id ?? 0) + 1,
@@ -296,8 +318,46 @@ export function audit(
 	});
 }
 
-export function notifyUser(db: MockDb, userId: string, type: NotificationType, title: string, body: string, projectId: string | null) {
+export function notifyUser(
+	db: MockDb,
+	userId: string,
+	type: NotificationType,
+	title: string,
+	body: string,
+	projectId: string | null,
+) {
 	db.notifications.unshift({ id: uuid(), userId, type, title, body, projectId, readAt: null, createdAt: now() });
+}
+
+/** A notification for a wallet (contributors have no account). */
+export function notifyWallet(
+	db: MockDb,
+	address: string,
+	type: WalletNotificationType,
+	title: string,
+	body: string,
+	projectId: string | null,
+) {
+	db.walletNotifications.unshift({ id: uuid(), address, type, title, body, projectId, readAt: null, createdAt: now() });
+}
+
+/** Reads an uploaded image (multipart part) as a data URL: the mock's stand-in for a signed storage link. */
+export const readAsDataUrl = (file: Blob) =>
+	new Promise<string>((resolve, reject) => {
+		const r = new FileReader();
+		r.onload = () => resolve(String(r.result));
+		r.onerror = () => reject(new HttpError(415, "Could not read the image"));
+		r.readAsDataURL(file);
+	});
+
+/** The API's image rules: one part, JPEG/PNG/WebP, 5 MB. */
+export function imagePart(body: Record<string, unknown>, field: string, label: string) {
+	const file = body[field];
+	if (!(file instanceof Blob)) throw new HttpError(400, `Send the image as a multipart/form-data part named ${field}`);
+	if (!["image/jpeg", "image/png", "image/webp"].includes(file.type))
+		throw new HttpError(415, `The ${label} must be a JPEG, PNG or WebP image`);
+	if (file.size > 5 * 1024 * 1024) throw new HttpError(413, "File too large");
+	return file;
 }
 
 export const event = (db: MockDb, name: AnalyticsEvent, extra: { projectId?: string; wallet?: string } = {}) =>
@@ -314,7 +374,11 @@ export function rateLimit(db: MockDb, key: string, max: number, windowMs: number
 /** "Enough of the target asset raised?" for the funding_target_reached notification. */
 export function targetReached(db: MockDb, p: ProjectRec) {
 	if (!p.targetAmount || !p.targetAssetId) return false;
-	const raised = sum(confirmedFor(db, p.id).filter((c) => c.assetId === p.targetAssetId).map((c) => c.amount));
+	const raised = sum(
+		confirmedFor(db, p.id)
+			.filter((c) => c.assetId === p.targetAssetId)
+			.map((c) => c.amount),
+	);
 	return compare(raised, p.targetAmount) >= 0;
 }
 

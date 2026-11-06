@@ -32,6 +32,17 @@ Supporting docs: `docs/DECISIONS.md` (PRD §17 assumptions; read first), `docs/A
 
 ---
 
+## Status (6 Nov 2026, later): API upgrade + profile onboarding
+
+- Backend added logos, funding deadlines (`fundingEndsAt` / `funding.endsAt`, `ended`), builder avatar, banner,
+  social links and verified wallet, project updates (builder CRUD + image, public tab, admin removal) and a wallet
+  inbox for contributors. All wired in web, admin and the mock (DB VERSION 10; 21 mock rule tests).
+- Email verification now lands on "Complete your profile" (`/builder/profile?welcome=1`): profile-strength bar,
+  upload or 10 ready-made avatars (SVG → PNG → `PUT /auth/me/avatar`), banner, links, verified wallet, Skip.
+  The dashboard hero shows the same progress until the profile is complete.
+- Back links (`components/BackLink.tsx`, always the page's parent) on every inner page, including auth steps.
+- Checked: types, lint, tests; mock e2e 36/36 + 33/33; live staging project page and inbox.
+
 ## Status (6 Nov 2026): connected to the ChuckSales API
 
 - Web and admin call the live API by default (`NEXT_PUBLIC_API_URL`, staging on Render); the mock is opt-in

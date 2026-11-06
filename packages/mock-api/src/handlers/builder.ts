@@ -4,7 +4,20 @@ import { read, update } from "../db";
 import type { MockDb, ProjectRec } from "../records";
 import { HttpError, NoContent, invalid, ok, route, type Ctx } from "../router";
 import { uuid } from "../util";
-import { assetById, audit, contributionDto, event, isAddress, lengthRule, notifyUser, now, page, projectDto } from "../common";
+import {
+	assetById,
+	audit,
+	contributionDto,
+	event,
+	imagePart,
+	isAddress,
+	lengthRule,
+	notifyUser,
+	now,
+	page,
+	projectDto,
+	readAsDataUrl,
+} from "../common";
 
 /** A builder's own projects (backend guide, "Projects"). Admins get 403 here. */
 
@@ -26,6 +39,7 @@ const FIELDS = [
 	"targetAssetId",
 	"acceptedAssetIds",
 	"payoutAddress",
+	"fundingEndsAt",
 ];
 
 function own(db: MockDb, ctx: Ctx) {
@@ -40,7 +54,8 @@ function applyFields(db: MockDb, p: ProjectRec, body: Record<string, unknown>) {
 	if (extra.length) throw invalid(extra.map((k) => `property ${k} should not exist`));
 	const problems: string[] = [];
 	const text = (k: string) => (body[k] === null || body[k] === undefined ? null : String(body[k]).trim() || null);
-	if ("type" in body && !TYPES.includes(body.type as ProjectType)) problems.push("type must be one of: new_idea, existing_project");
+	if ("type" in body && !TYPES.includes(body.type as ProjectType))
+		problems.push("type must be one of: new_idea, existing_project");
 	if ("title" in body) lengthRule("title", text("title"), 3, 120, problems);
 	for (const [k, max] of [
 		["summary", 280],
@@ -63,14 +78,22 @@ function applyFields(db: MockDb, p: ProjectRec, body: Record<string, unknown>) {
 		const l = body.links as { label?: string; url?: string }[];
 		if (!Array.isArray(l)) problems.push("links must be an array");
 		else if (l.length > 10) problems.push("links must contain no more than 10 elements");
-		else if (l.some((x) => !x?.label?.trim() || !/^https:\/\/\S+\.\S+/.test(x?.url ?? ""))) problems.push("links each need a label and an https URL");
+		else if (l.some((x) => !x?.label?.trim() || !/^https:\/\/\S+\.\S+/.test(x?.url ?? "")))
+			problems.push("links each need a label and an https URL");
 	}
 	if ("targetAmount" in body && body.targetAmount && !isValidAmount(String(body.targetAmount)))
 		problems.push("targetAmount must be a decimal above 0 with up to 7 decimals");
-	if ("targetAssetId" in body && body.targetAssetId && !assetById(String(body.targetAssetId))) problems.push("targetAssetId must be XLM or USDC");
-	if ("acceptedAssetIds" in body && (!Array.isArray(body.acceptedAssetIds) || (body.acceptedAssetIds as string[]).some((a) => !assetById(a))))
+	if ("targetAssetId" in body && body.targetAssetId && !assetById(String(body.targetAssetId)))
+		problems.push("targetAssetId must be XLM or USDC");
+	if (
+		"acceptedAssetIds" in body &&
+		(!Array.isArray(body.acceptedAssetIds) || (body.acceptedAssetIds as string[]).some((a) => !assetById(a)))
+	)
 		problems.push("acceptedAssetIds must only contain XLM or USDC");
-	if ("payoutAddress" in body && body.payoutAddress && !isAddress(body.payoutAddress)) problems.push("payoutAddress must be a Stellar public key");
+	if ("payoutAddress" in body && body.payoutAddress && !isAddress(body.payoutAddress))
+		problems.push("payoutAddress must be a Stellar public key");
+	if ("fundingEndsAt" in body && body.fundingEndsAt !== null && Number.isNaN(Date.parse(String(body.fundingEndsAt))))
+		problems.push("fundingEndsAt must be a valid ISO 8601 date string");
 	if (problems.length) throw invalid(problems);
 
 	if ("type" in body) p.type = body.type as ProjectType;
@@ -78,13 +101,19 @@ function applyFields(db: MockDb, p: ProjectRec, body: Record<string, unknown>) {
 	for (const k of ["summary", "problem", "solution", "beneficiaries"] as const) if (k in body) p[k] = text(k);
 	if ("categoryId" in body) p.categoryId = text("categoryId");
 	if ("stage" in body) p.stage = (body.stage as ProjectStage) ?? null;
-	if ("teamMembers" in body) p.teamMembers = (body.teamMembers as { name: string; role: string }[]).map((m) => ({ name: m.name.trim(), role: m.role.trim() }));
-	if ("links" in body) p.links = (body.links as { label: string; url: string }[]).map((x) => ({ label: x.label.trim(), url: x.url.trim() }));
+	if ("teamMembers" in body)
+		p.teamMembers = (body.teamMembers as { name: string; role: string }[]).map((m) => ({
+			name: m.name.trim(),
+			role: m.role.trim(),
+		}));
+	if ("links" in body)
+		p.links = (body.links as { label: string; url: string }[]).map((x) => ({ label: x.label.trim(), url: x.url.trim() }));
 	if ("fundraisingEnabled" in body) p.fundraisingEnabled = !!body.fundraisingEnabled;
 	if ("targetAmount" in body) p.targetAmount = text("targetAmount");
 	if ("targetAssetId" in body) p.targetAssetId = text("targetAssetId");
 	if ("acceptedAssetIds" in body) p.acceptedAssetIds = [...new Set(body.acceptedAssetIds as string[])];
 	if ("payoutAddress" in body) p.payoutAddress = text("payoutAddress");
+	if ("fundingEndsAt" in body) p.fundingEndsAt = body.fundingEndsAt ? new Date(String(body.fundingEndsAt)).toISOString() : null;
 	p.updatedAt = now();
 }
 
@@ -103,8 +132,10 @@ export function submitProblems(p: ProjectRec) {
 		if (!p.targetAmount) out.push("targetAmount is required when fundraising");
 		if (!p.targetAssetId) out.push("targetAssetId is required when fundraising");
 		if (!p.acceptedAssetIds.length) out.push("acceptedAssetIds must include at least one asset");
-		else if (p.targetAssetId && !p.acceptedAssetIds.includes(p.targetAssetId)) out.push("acceptedAssetIds must include targetAssetId");
+		else if (p.targetAssetId && !p.acceptedAssetIds.includes(p.targetAssetId))
+			out.push("acceptedAssetIds must include targetAssetId");
 		if (!p.payoutAddress) out.push("payoutAddress is required when fundraising");
+		if (p.fundingEndsAt && Date.parse(p.fundingEndsAt) <= Date.now()) out.push("fundingEndsAt must be in the future");
 	}
 	return out;
 }
@@ -132,11 +163,13 @@ route("POST", "/builder/projects", "builder", ({ user, body }) => {
 			teamMembers: [],
 			links: [],
 			coverImageUrl: null,
+			logoUrl: null,
 			fundraisingEnabled: false,
 			targetAmount: null,
 			targetAssetId: null,
 			acceptedAssetIds: [],
 			payoutAddress: null,
+			fundingEndsAt: null,
 			published: false,
 			featured: false,
 			revision: 0,
@@ -172,7 +205,8 @@ route("PATCH", "/builder/projects/:id", "builder", (ctx) => {
 	if (!Object.keys(ctx.body).length) throw invalid(["Send at least one field"]);
 	return update((db) => {
 		const p = own(db, ctx);
-		if (p.status !== "draft" && p.status !== "changes_requested") throw new HttpError(409, `Cannot edit a project that is ${p.status}`);
+		if (p.status !== "draft" && p.status !== "changes_requested")
+			throw new HttpError(409, `Cannot edit a project that is ${p.status}`);
 		applyFields(db, p, ctx.body);
 		return ok(projectDto(db, p), "Project updated");
 	});
@@ -190,7 +224,8 @@ route("DELETE", "/builder/projects/:id", "builder", (ctx) => {
 route("POST", "/builder/projects/:id/submit", "builder", (ctx) =>
 	update((db) => {
 		const p = own(db, ctx);
-		if (p.status !== "draft" && p.status !== "changes_requested") throw new HttpError(409, `Cannot submit a project that is ${p.status}`);
+		if (p.status !== "draft" && p.status !== "changes_requested")
+			throw new HttpError(409, `Cannot submit a project that is ${p.status}`);
 		const problems = submitProblems(p);
 		if (problems.length) throw invalid(problems);
 		// With fundraising on, the payout account must exist and trust every issued asset (mock: an address ending in
@@ -204,9 +239,23 @@ route("POST", "/builder/projects/:id/submit", "builder", (ctx) =>
 		p.updatedAt = now();
 		const { id: _id, ownerId: _o, ...snapshot } = p;
 		db.revisions.push({ projectId: p.id, revision: p.revision, submittedBy: ctx.user!.id, submittedAt: p.submittedAt, snapshot });
-		notifyUser(db, p.ownerId, "project_submitted", `We received ${p.title} for review`, "An admin will review it soon. You’ll be notified of the decision.", p.id);
+		notifyUser(
+			db,
+			p.ownerId,
+			"project_submitted",
+			`We received ${p.title} for review`,
+			"An admin will review it soon. You’ll be notified of the decision.",
+			p.id,
+		);
 		for (const admin of db.users.filter((u) => u.role === "admin"))
-			notifyUser(db, admin.id, "review_requested", `${p.title} is waiting for review`, `Revision ${p.revision}, submitted by ${ctx.user!.name}.`, p.id);
+			notifyUser(
+				db,
+				admin.id,
+				"review_requested",
+				`${p.title} is waiting for review`,
+				`Revision ${p.revision}, submitted by ${ctx.user!.name}.`,
+				p.id,
+			);
 		audit(db, ctx.user!.id, "project.submit", { type: "project", id: p.id }, { metadata: { from, revision: p.revision } });
 		event(db, "project_submitted", { projectId: p.id });
 		return ok(projectDto(db, p), "Project submitted");
@@ -220,42 +269,46 @@ route("GET", "/builder/projects/:id/feedback", "builder", (ctx) => {
 		db.reviews
 			.filter((r) => r.projectId === p.id)
 			.sort((a, b) => a.at.localeCompare(b.at))
-			.map((r) => ({ action: r.action, fromStatus: r.fromStatus, toStatus: r.toStatus, reason: r.reason, revision: r.revision, at: r.at })),
+			.map((r) => ({
+				action: r.action,
+				fromStatus: r.fromStatus,
+				toStatus: r.toStatus,
+				reason: r.reason,
+				revision: r.revision,
+				at: r.at,
+			})),
 		"Feedback retrieved",
 	);
 });
 
-const readAsDataUrl = (file: Blob) =>
-	new Promise<string>((resolve, reject) => {
-		const r = new FileReader();
-		r.onload = () => resolve(String(r.result));
-		r.onerror = () => reject(new HttpError(415, "Could not read the image"));
-		r.readAsDataURL(file);
+/** Cover (wide) and logo (square): one multipart part each, while the project is editable. */
+for (const [kind, field] of [
+	["cover", "coverImageUrl"],
+	["logo", "logoUrl"],
+] as const) {
+	const label = kind === "cover" ? "Cover" : "Logo";
+	route("PUT", `/builder/projects/:id/${kind}`, "builder", async (ctx) => {
+		const url = await readAsDataUrl(imagePart(ctx.body, kind, kind));
+		return update((db) => {
+			const p = own(db, ctx);
+			if (p.status !== "draft" && p.status !== "changes_requested")
+				throw new HttpError(409, "Projects can only be changed while a draft or when changes are requested");
+			p[field] = url;
+			p.updatedAt = now();
+			return ok(projectDto(db, p), `${label} uploaded`);
+		});
 	});
-
-route("PUT", "/builder/projects/:id/cover", "builder", async (ctx) => {
-	const file = ctx.body.cover;
-	if (!(file instanceof Blob)) throw invalid(["cover file is required"]);
-	if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) throw new HttpError(415, "Cover must be a JPEG, PNG or WebP image");
-	if (file.size > 5 * 1024 * 1024) throw new HttpError(413, "Cover must be 5 MB or smaller");
-	const url = await readAsDataUrl(file);
-	return update((db) => {
-		const p = own(db, ctx);
-		if (p.status !== "draft" && p.status !== "changes_requested") throw new HttpError(409, `Cannot edit a project that is ${p.status}`);
-		p.coverImageUrl = url;
-		p.updatedAt = now();
-		return ok(projectDto(db, p), "Cover uploaded");
-	});
-});
-
-route("DELETE", "/builder/projects/:id/cover", "builder", (ctx) =>
-	update((db) => {
-		const p = own(db, ctx);
-		p.coverImageUrl = null;
-		p.updatedAt = now();
-		return ok(projectDto(db, p), "Cover removed");
-	}),
-);
+	route("DELETE", `/builder/projects/:id/${kind}`, "builder", (ctx) =>
+		update((db) => {
+			const p = own(db, ctx);
+			if (p.status !== "draft" && p.status !== "changes_requested")
+				throw new HttpError(409, "Projects can only be changed while a draft or when changes are requested");
+			p[field] = null;
+			p.updatedAt = now();
+			return ok(projectDto(db, p), `${label} removed`);
+		}),
+	);
+}
 
 route("GET", "/builder/projects/:id/contributions", "builder", (ctx) => {
 	const db = read();

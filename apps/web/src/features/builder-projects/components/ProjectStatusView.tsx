@@ -3,18 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-	AlertTriangle,
-	ArrowLeft,
-	Check,
-	ExternalLink,
-	Eye,
-	MessageSquareWarning,
-	Pencil,
-	Send,
-	Trash2,
-	XCircle,
-} from "lucide-react";
+import { AlertTriangle, Check, ExternalLink, Eye, MessageSquareWarning, Pencil, Send, Trash2, XCircle } from "lucide-react";
 import { PROJECT_ACTION_LABEL, PROJECT_STAGE_LABEL, PROJECT_TYPE_LABEL, SUGGESTION_TYPE_LABEL } from "@repo/domain/labels";
 import { formatAmount, progressPercent } from "@repo/domain/money";
 import { isPubliclyVisible } from "@repo/domain/project-status";
@@ -27,6 +16,9 @@ import { routes } from "@/lib/routes";
 import { timeAgo } from "@/lib/time";
 import { notify } from "@/lib/use-toast";
 import { AddressChip } from "@/components/AddressChip";
+import { BackLink } from "@/components/BackLink";
+import { FundingDeadline } from "@/components/FundingDeadline";
+import { ProjectUpdates } from "@/features/builder-projects/components/ProjectUpdates";
 import { Pager } from "@/components/Pager";
 import { ProjectLogo } from "@/components/ProjectLogo";
 import { Progress } from "@/components/Progress";
@@ -111,13 +103,11 @@ export function ProjectStatusView({ id }: { id: string }) {
 
 	return (
 		<div className="app-container py-8 md:py-12">
-			<Link href={routes.dashboard} className="inline-flex items-center gap-1.5 text-sm text-white/60 hover:text-white">
-				<ArrowLeft className="size-4" /> Dashboard
-			</Link>
+			<BackLink href={routes.dashboard} label="Dashboard" />
 
 			<header className="mt-5 flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
 				<div className="flex min-w-0 items-center gap-4">
-					<ProjectLogo title={p.title} src={p.coverImageUrl} className="animate-pop size-16 text-lg" />
+					<ProjectLogo title={p.title} src={p.logoUrl} className="animate-pop size-16 text-lg" />
 					<div className="min-w-0">
 						<h1 className="animate-rise truncate font-display text-[26px] font-bold md:text-[32px]">{p.title}</h1>
 						<div className="animate-rise mt-1 flex flex-wrap items-center gap-2 [--i:1]">
@@ -231,7 +221,9 @@ export function ProjectStatusView({ id }: { id: string }) {
 						<p className="mt-1 leading-7 whitespace-pre-line text-white/80">{fb.reason}</p>
 						<p className="mt-1 text-xs text-white/45">{timeAgo(fb.at)}</p>
 						{p.status === "changes_requested" && (
-							<p className="mt-2 text-sm text-white/65">Edit the project, then resubmit it. Each submission is kept as a revision.</p>
+							<p className="mt-2 text-sm text-white/65">
+								Edit the project, then resubmit it. Each submission is kept as a revision.
+							</p>
 						)}
 					</div>
 				</section>
@@ -271,7 +263,9 @@ export function ProjectStatusView({ id }: { id: string }) {
 													: "bg-white/10",
 									)}
 								/>
-								<span className={cn("flex items-center gap-1 text-xs md:text-sm", st === "todo" ? "text-white/40" : "text-white/85")}>
+								<span
+									className={cn("flex items-center gap-1 text-xs md:text-sm", st === "todo" ? "text-white/40" : "text-white/85")}
+								>
 									{st === "done" && <Check className="size-3.5 text-success-200" />}
 									{st === "stop" && (
 										<AlertTriangle className={cn("size-3.5", p.status === "rejected" ? "text-error-200" : "text-warning-200")} />
@@ -295,11 +289,11 @@ export function ProjectStatusView({ id }: { id: string }) {
 						<Fact label="Category" value={p.category?.name ?? null} />
 						<Fact label="Stage" value={p.stage ? PROJECT_STAGE_LABEL[p.stage] : null} />
 						<Fact label="Team" value={p.teamMembers.length ? p.teamMembers.map((m) => m.name).join(", ") : null} />
-						<Fact label="Fundraising" value={p.fundraisingEnabled ? `On · ${p.acceptedAssets.map((a) => a.code).join(", ") || "no assets yet"}` : "Off"} />
 						<Fact
-							label="Target"
-							value={p.targetAmount ? `${formatAmount(p.targetAmount)} ${p.targetAsset?.code ?? ""}` : null}
+							label="Fundraising"
+							value={p.fundraisingEnabled ? `On · ${p.acceptedAssets.map((a) => a.code).join(", ") || "no assets yet"}` : "Off"}
 						/>
+						<Fact label="Target" value={p.targetAmount ? `${formatAmount(p.targetAmount)} ${p.targetAsset?.code ?? ""}` : null} />
 						{p.fundraisingEnabled && (
 							<div className="sm:col-span-2">
 								<dt className="text-sm text-white/50">Payout wallet</dt>
@@ -337,6 +331,7 @@ export function ProjectStatusView({ id }: { id: string }) {
 				</aside>
 			</div>
 
+			{p.status === "approved" && <ProjectUpdates projectId={p.id} />}
 			{decided && <Insights id={p.id} />}
 			{decided && p.fundraisingEnabled && <Contributions id={p.id} />}
 			{live && p.slug && <Suggestions slug={p.slug} />}
@@ -374,6 +369,7 @@ function FundingPanel({ project: p }: { project: Project }) {
 				{q.data?.paginationMeta.totalCount ?? 0} confirmed contribution{q.data?.paginationMeta.totalCount === 1 ? "" : "s"}
 				{pct !== null && ` · ${pct}% of the ${p.targetAsset?.code} target`}
 			</p>
+			<FundingDeadline funding={{ endsAt: p.fundingEndsAt, ended: false }} variant="detail" className="mt-3" />
 		</section>
 	);
 }

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, ArrowLeft, Check, Clock, Info, Loader2, ShieldCheck, Wallet } from "lucide-react";
+import { AlertTriangle, Check, Clock, Info, Loader2, ShieldCheck, Wallet } from "lucide-react";
 import { compare, formatAmount, isValidAmount, sum } from "@repo/domain/money";
 import type { PreparedContribution, StellarAsset } from "@repo/domain/types";
 import { Button } from "@repo/ui/button";
@@ -14,6 +14,7 @@ import { useAccountSummary, useNetwork } from "@/lib/stellar/network";
 import { notify } from "@/lib/use-toast";
 import { AddressChip } from "@/components/AddressChip";
 import { ProjectLogo } from "@/components/ProjectLogo";
+import { BackLink } from "@/components/BackLink";
 import { EmptyState } from "@/components/States";
 import { useProject } from "@/features/projects/hooks";
 import { usePrepareContribution, useSubmitContribution } from "@/features/contributions/hooks";
@@ -76,20 +77,25 @@ export function ContributeView({ slug }: { slug: string }) {
 				? `Add ${asset.code} to your wallet first (its add-asset screen, issuer ${asset.issuer?.slice(0, 4)}…${asset.issuer?.slice(-4)}).`
 				: !amountError && held?.balance != null && compare(trimmed, held.balance) > 0
 					? `Not enough ${asset?.code}: this wallet holds ${formatAmount(held.balance, 7)}.`
-					: !xlm?.balance ||
-						  compare(xlm.balance, asset?.native && !amountError ? sum([trimmed, FEE_HEADROOM]) : FEE_HEADROOM) < 0
+					: !xlm?.balance || compare(xlm.balance, asset?.native && !amountError ? sum([trimmed, FEE_HEADROOM]) : FEE_HEADROOM) < 0
 						? "Keep a little XLM in this wallet: every payment pays a small network fee in XLM."
 						: null;
 
-	if (project.isError || (p && (!p.fundraisingEnabled || !p.funding || !accepted.length)))
+	if (project.isError || (p && (!p.fundraisingEnabled || !p.funding || !accepted.length || p.funding.ended)))
 		return (
 			<div className="app-container py-16">
+				<BackLink href={p ? routes.project(slug) : routes.projects} label={p ? "Back to project" : "All projects"} />
 				<EmptyState
-					title="This project isn’t accepting contributions"
-					description="It may not be listed, or fundraising is off."
+					className="mt-6"
+					title={p?.funding?.ended ? "Funding for this project has ended" : "This project isn’t accepting contributions"}
+					description={
+						p?.funding?.ended
+							? "Its funding deadline has passed, so new contributions are closed. You can still suggest improvements."
+							: "It may not be listed, or fundraising is off."
+					}
 					action={
 						<Button asChild className="w-auto px-6">
-							<Link href={routes.projects}>Explore projects</Link>
+							<Link href={p ? routes.project(slug) : routes.projects}>{p ? "View project" : "Explore projects"}</Link>
 						</Button>
 					}
 				/>
@@ -149,13 +155,11 @@ export function ContributeView({ slug }: { slug: string }) {
 
 	return (
 		<div className="app-container max-w-[760px] py-10 md:py-14">
-			<Link href={routes.project(slug)} className="inline-flex items-center gap-1.5 text-sm text-white/60 hover:text-white">
-				<ArrowLeft className="size-4" /> Back to project
-			</Link>
+			<BackLink href={routes.project(slug)} label="Back to project" />
 
 			<div className="mt-5 flex items-center gap-4">
 				{p ? (
-					<ProjectLogo title={p.title} src={p.coverImageUrl} className="size-12 text-sm" />
+					<ProjectLogo title={p.title} src={p.logoUrl} className="size-12 text-sm" />
 				) : (
 					<span className="skeleton-shimmer block size-12 rounded-full" />
 				)}
@@ -172,7 +176,10 @@ export function ContributeView({ slug }: { slug: string }) {
 					return (
 						<li key={s} aria-current={active ? "step" : undefined} className="flex flex-col gap-2">
 							<span
-								className={cn("h-1 rounded-full transition-colors duration-500", done || active ? "bg-primary-500" : "bg-white/10")}
+								className={cn(
+									"h-1 rounded-full transition-colors duration-500",
+									done || active ? "bg-primary-500" : "bg-white/10",
+								)}
 							/>
 							<span
 								className={cn(
@@ -275,7 +282,10 @@ export function ContributeView({ slug }: { slug: string }) {
 						</p>
 
 						{failure && (
-							<p role="alert" className="animate-pop mt-5 rounded-lg border border-error-400/30 bg-error-400/10 px-4 py-3 text-sm text-error-100">
+							<p
+								role="alert"
+								className="animate-pop mt-5 rounded-lg border border-error-400/30 bg-error-400/10 px-4 py-3 text-sm text-error-100"
+							>
 								{failure}
 							</p>
 						)}
@@ -325,7 +335,9 @@ export function ContributeView({ slug }: { slug: string }) {
 										{phase === "wallet" ? "Approve in your wallet" : "Sending to Stellar…"}
 									</h2>
 									<p className="mt-1.5 max-w-[380px] text-sm text-white/60">
-										{phase === "wallet" ? "Check your wallet: it’s asking you to approve this payment." : "Don’t close this page."}
+										{phase === "wallet"
+											? "Check your wallet: it’s asking you to approve this payment."
+											: "Don’t close this page."}
 									</p>
 								</div>
 								<ol className="mx-auto mt-7 flex max-w-[420px] flex-col gap-3">
@@ -443,7 +455,13 @@ function ReviewStep({
 				<Row label="Asset">
 					{c.asset.code}
 					{c.asset.issuer && (
-						<AddressChip value={c.asset.issuer} head={5} tail={5} explorerBase={explorerUrl} className="mt-0.5 block text-xs text-white/60" />
+						<AddressChip
+							value={c.asset.issuer}
+							head={5}
+							tail={5}
+							explorerBase={explorerUrl}
+							className="mt-0.5 block text-xs text-white/60"
+						/>
 					)}
 				</Row>
 				<Row label="To (the builder’s wallet)">

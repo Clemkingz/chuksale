@@ -1,5 +1,5 @@
 /**
- * The ChuckSales API contract (backend `/docs-json`, OpenAPI 3, checked 2026-11-05). These are the exact shapes the
+ * The ChuckSales API contract (backend `/docs-json`, OpenAPI 3, checked 2026-11-06). These are the exact shapes the
  * live backend answers with; the mock backend (`@repo/mock-api`, opt-in) answers with the same ones.
  *
  * - Amounts are decimal strings with up to 7 places ("12.5"), for XLM and USDC alike. Never JS numbers: use `money.ts`.
@@ -86,12 +86,27 @@ export interface RegisterInput {
 	organizationName?: string;
 }
 
+export type SocialPlatform =
+	"x" | "github" | "linkedin" | "discord" | "telegram" | "youtube" | "instagram" | "facebook" | "other";
+
+export interface SocialLink {
+	platform: SocialPlatform;
+	/** https, up to 300 characters. */
+	url: string;
+}
+
 export interface BuilderProfile {
 	displayName: string;
 	organizationName: string | null;
 	bio: string | null;
 	websiteUrl: string | null;
 	contactEmail: string | null;
+	socialLinks: SocialLink[];
+	/** The wallet the builder signed for (`PUT /auth/me/wallet`). Shown on public project pages. */
+	walletAddress: StellarAddress | null;
+	walletVerifiedAt: ISODate | null;
+	/** Signed link, expires: refetch, never store. About 3:1. */
+	bannerUrl: string | null;
 }
 
 export interface Me {
@@ -99,6 +114,8 @@ export interface Me {
 	email: string;
 	role: Role;
 	name: string;
+	/** Signed link, expires: refetch, never store. Builders and admins. */
+	avatarUrl: string | null;
 	/** Null for admins. */
 	profile: BuilderProfile | null;
 	createdAt: ISODate;
@@ -112,6 +129,8 @@ export interface UpdateMeInput {
 	bio?: string | null;
 	websiteUrl?: string | null;
 	contactEmail?: string | null;
+	/** Replaces the whole list (max 10); [] clears. */
+	socialLinks?: SocialLink[];
 }
 
 export interface UserSummary {
@@ -232,15 +251,7 @@ export type ProjectType = "new_idea" | "existing_project";
 export type ProjectStatus = "draft" | "submitted" | "under_review" | "changes_requested" | "approved" | "rejected" | "archived";
 export type ProjectStage = "idea" | "prototype" | "mvp" | "launched" | "scaling";
 export type ProjectAction =
-	| "start_review"
-	| "approve"
-	| "reject"
-	| "request_changes"
-	| "publish"
-	| "unpublish"
-	| "archive"
-	| "feature"
-	| "unfeature";
+	"start_review" | "approve" | "reject" | "request_changes" | "publish" | "unpublish" | "archive" | "feature" | "unfeature";
 
 export interface TeamMember {
 	name: string;
@@ -269,6 +280,8 @@ export interface ProjectInput {
 	targetAssetId?: string | null;
 	acceptedAssetIds?: string[];
 	payoutAddress?: StellarAddress | null;
+	/** Optional funding deadline (ISO). Must be in the future when submitted; null removes it. */
+	fundingEndsAt?: ISODate | null;
 }
 
 export interface Feedback {
@@ -304,11 +317,14 @@ export interface Project {
 	links: ProjectLink[];
 	/** Signed link, expires in about an hour: refetch, never store. */
 	coverImageUrl: string | null;
+	/** Signed link, expires: refetch, never store. Square. */
+	logoUrl: string | null;
 	fundraisingEnabled: boolean;
 	targetAmount: Amount | null;
 	targetAsset: StellarAsset | null;
 	acceptedAssets: StellarAsset[];
 	payoutAddress: StellarAddress | null;
+	fundingEndsAt: ISODate | null;
 	published: boolean;
 	featured: boolean;
 	revision: number;
@@ -391,6 +407,28 @@ export interface PublicFunding {
 	targetAmount: Amount | null;
 	targetAsset: StellarAsset | null;
 	acceptedAssets: StellarAsset[];
+	/** Funding deadline; null = none. Count the time left on the client. */
+	endsAt: ISODate | null;
+	/** The deadline has passed: contributions are refused. */
+	ended: boolean;
+}
+
+export interface PublicBuilder {
+	displayName: string | null;
+	organizationName: string | null;
+	/** Signed link, expires. */
+	avatarUrl: string | null;
+}
+
+export interface PublicBuilderDetail extends PublicBuilder {
+	bio: string | null;
+	websiteUrl: string | null;
+	/** The public contact the builder chose; never the sign-in email. */
+	contactEmail: string | null;
+	socialLinks: SocialLink[];
+	/** Verified by signing. May differ from the project's payoutAddress. */
+	walletAddress: StellarAddress | null;
+	bannerUrl: string | null;
 }
 
 export interface PublicProjectCard {
@@ -402,8 +440,9 @@ export interface PublicProjectCard {
 	stage: ProjectStage;
 	category: Category;
 	coverImageUrl: string | null;
+	logoUrl: string | null;
 	featured: boolean;
-	builder: { displayName: string | null; organizationName: string | null };
+	builder: PublicBuilder;
 	fundraisingEnabled: boolean;
 	/** Null when not fundraising. */
 	funding: PublicFunding | null;
@@ -416,16 +455,41 @@ export interface PublicProject extends Omit<PublicProjectCard, "builder"> {
 	beneficiaries: string;
 	teamMembers: TeamMember[];
 	links: ProjectLink[];
-	builder: {
-		displayName: string | null;
-		organizationName: string | null;
-		bio: string | null;
-		websiteUrl: string | null;
-		contactEmail: string | null;
-	};
+	builder: PublicBuilderDetail;
 	/** Where contributions are paid; null when not fundraising. */
 	payoutAddress: StellarAddress | null;
 	updatedAt: ISODate;
+}
+
+// ---------------------------------------------------------------- project updates
+
+export type ProjectUpdateStatus = "published" | "removed";
+
+/** Public (`GET /projects/{slug}/updates`). Plain text: render as text, keep line breaks. */
+export interface PublicProjectUpdate {
+	id: string;
+	/** 5 to 120 characters, one line. */
+	title: string;
+	/** 20 to 5000 characters. */
+	body: string;
+	/** Signed link, expires in about an hour. */
+	imageUrl: string | null;
+	createdAt: ISODate;
+	updatedAt: ISODate;
+}
+
+/** Builder and admin view, including removed ones. */
+export interface ProjectUpdate extends PublicProjectUpdate {
+	projectId: string;
+	status: ProjectUpdateStatus;
+	/** Why an admin removed it; shown to the builder. */
+	removalReason: string | null;
+	removedAt: ISODate | null;
+}
+
+export interface ProjectUpdateInput {
+	title: string;
+	body: string;
 }
 
 // ---------------------------------------------------------------- contributions
@@ -578,11 +642,32 @@ export type NotificationType =
 	| "project_changes_requested"
 	| "project_archived"
 	| "first_contribution"
-	| "funding_target_reached";
+	| "funding_target_reached"
+	| "project_update_removed";
 
 export interface AppNotification {
 	id: string;
 	type: NotificationType;
+	title: string;
+	/** Plain text; render as text and keep line breaks. */
+	body: string;
+	projectId: string | null;
+	readAt: ISODate | null;
+	createdAt: ISODate;
+}
+
+export type WalletNotificationType =
+	| "contribution_confirmed"
+	| "contribution_failed"
+	| "suggestion_published"
+	| "suggestion_rejected"
+	| "suggestion_hidden"
+	| "project_update";
+
+/** For the connected wallet (`/wallet/notifications`, wallet token). */
+export interface WalletNotification {
+	id: string;
+	type: WalletNotificationType;
 	title: string;
 	/** Plain text; render as text and keep line breaks. */
 	body: string;

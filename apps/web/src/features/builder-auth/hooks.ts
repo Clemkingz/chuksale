@@ -37,7 +37,8 @@ export function useSignIn() {
 		mutationFn: async (v: SignInValues) => {
 			const tokens = unwrap<AuthTokens>(await builderApi.post("/auth/login", { email: v.email.trim(), password: v.password }));
 			// An admin signing in here: end that session at once; admins use the admin console.
-			if (tokens.role === "admin") await builderApi.post("/auth/logout", { refreshToken: tokens.refreshToken }).catch(() => undefined);
+			if (tokens.role === "admin")
+				await builderApi.post("/auth/logout", { refreshToken: tokens.refreshToken }).catch(() => undefined);
 			return tokens;
 		},
 	});
@@ -73,7 +74,10 @@ export function useResendOtp() {
 
 export function useForgotPassword() {
 	return useMutation({
-		mutationFn: async (email: string) => ({ email, ...unwrap<OtpIssued>(await builderApi.post("/auth/forgot-password", { email })) }),
+		mutationFn: async (email: string) => ({
+			email,
+			...unwrap<OtpIssued>(await builderApi.post("/auth/forgot-password", { email })),
+		}),
 		onSuccess: (data) => showDemoCode(data.email),
 	});
 }
@@ -93,6 +97,43 @@ export function useUpdateMe() {
 	const qc = useQueryClient();
 	return useMutation({
 		mutationFn: async (input: UpdateMeInput) => unwrap<Me>(await builderApi.patch("/auth/me", input)),
+		onSuccess: (me) => qc.setQueryData(meKey, me),
+	});
+}
+
+/** Profile picture (builders and admins) and banner (builders): one multipart part, JPEG/PNG/WebP up to 5 MB. */
+function useMeImage(kind: "avatar" | "banner") {
+	const qc = useQueryClient();
+	return useMutation({
+		mutationFn: async (file: File | null) => {
+			if (!file) return unwrap<Me>(await builderApi.delete(`/auth/me/${kind}`));
+			const form = new FormData();
+			form.append(kind, file);
+			return unwrap<Me>(await builderApi.put(`/auth/me/${kind}`, form));
+		},
+		onSuccess: (me) => qc.setQueryData(meKey, me),
+	});
+}
+
+export const useAvatar = () => useMeImage("avatar");
+export const useBanner = () => useMeImage("banner");
+
+/**
+ * The builder's verified wallet (`PUT /auth/me/wallet`): proves control with a live wallet token from the SEP-10
+ * sign-in. Shown on the profile and public project pages; a good default for a project's payout address.
+ */
+export function useLinkWallet() {
+	const qc = useQueryClient();
+	return useMutation({
+		mutationFn: async (walletToken: string) => unwrap<Me>(await builderApi.put("/auth/me/wallet", { walletToken })),
+		onSuccess: (me) => qc.setQueryData(meKey, me),
+	});
+}
+
+export function useUnlinkWallet() {
+	const qc = useQueryClient();
+	return useMutation({
+		mutationFn: async () => unwrap<Me>(await builderApi.delete("/auth/me/wallet")),
 		onSuccess: (me) => qc.setQueryData(meKey, me),
 	});
 }

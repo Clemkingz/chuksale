@@ -23,13 +23,18 @@ function toPublic(p: Project, me: Me): PublicProject {
 		stage: p.stage ?? "idea",
 		category: p.category ?? { id: "", name: "No category yet", slug: "" },
 		coverImageUrl: p.coverImageUrl,
+		logoUrl: p.logoUrl,
 		featured: false,
 		builder: {
 			displayName: me.profile?.displayName ?? me.name,
 			organizationName: me.profile?.organizationName ?? null,
+			avatarUrl: me.avatarUrl,
 			bio: me.profile?.bio ?? null,
 			websiteUrl: me.profile?.websiteUrl ?? null,
 			contactEmail: me.profile?.contactEmail ?? null,
+			socialLinks: me.profile?.socialLinks ?? [],
+			walletAddress: me.profile?.walletAddress ?? null,
+			bannerUrl: me.profile?.bannerUrl ?? null,
 		},
 		fundraisingEnabled: p.fundraisingEnabled,
 		funding: p.fundraisingEnabled
@@ -39,6 +44,8 @@ function toPublic(p: Project, me: Me): PublicProject {
 					targetAmount: p.targetAmount,
 					targetAsset: p.targetAsset,
 					acceptedAssets: p.acceptedAssets,
+					endsAt: p.fundingEndsAt,
+					ended: false,
 				}
 			: null,
 		publishedAt: p.publishedAt ?? p.updatedAt,

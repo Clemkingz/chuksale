@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ArrowLeft, CheckCircle2, Clock, Lightbulb, Wallet, XCircle } from "lucide-react";
+import { CheckCircle2, Clock, Lightbulb, Wallet, XCircle } from "lucide-react";
 import { SUGGESTION_STATUS_LABEL, SUGGESTION_TYPE_LABEL } from "@repo/domain/labels";
 import type { SuggestionStatus, SuggestionType } from "@repo/domain/types";
 import { Button } from "@repo/ui/button";
@@ -21,6 +21,7 @@ import { ProjectLogo } from "@/components/ProjectLogo";
 import { useProject } from "@/features/projects/hooks";
 import { useConnectedWallet, useRequireWallet } from "@/features/wallet/hooks";
 import { useCreateSuggestion, useMySuggestions } from "@/features/suggestions/hooks";
+import { BackLink } from "@/components/BackLink";
 
 /**
  * /projects/[slug]/suggest (PRD §6.6): type, title, body, optional link. The wallet is asked for only when sending
@@ -114,9 +115,7 @@ export function SuggestView({ slug }: { slug: string }) {
 
 	return (
 		<div className="app-container py-10 md:py-14">
-			<Link href={routes.project(slug)} className="inline-flex items-center gap-1.5 text-sm text-white/60 hover:text-white">
-				<ArrowLeft className="size-4" /> Back to project
-			</Link>
+			<BackLink href={routes.project(slug)} label="Back to project" />
 			<div className="mt-5 grid gap-10 lg:grid-cols-[minmax(0,1fr)_360px]">
 				<section aria-labelledby="suggest-title" className="animate-rise rounded-[24px] bg-[#16161B] px-5 py-7 sm:px-8 md:py-9">
 					<div className="flex items-center gap-4">
@@ -176,11 +175,7 @@ export function SuggestView({ slug }: { slug: string }) {
 							error={form.formState.errors.link?.message}
 							{...form.register("link")}
 						/>
-						<FormError
-							message={
-								create.isError && !FIELDS.some((f) => fieldErrors[f]) ? errorMessage(create.error) : null
-							}
-						/>
+						<FormError message={create.isError && !FIELDS.some((f) => fieldErrors[f]) ? errorMessage(create.error) : null} />
 						<div className="flex flex-col gap-3 rounded-xl bg-white/[0.04] px-4 py-3 text-sm text-white/70 sm:flex-row sm:items-center sm:justify-between">
 							<span className="flex items-center gap-2">
 								<Wallet className="size-4 shrink-0 text-primary-300" aria-hidden />

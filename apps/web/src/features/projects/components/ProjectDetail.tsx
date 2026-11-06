@@ -2,10 +2,22 @@
 
 import { useState, type CSSProperties } from "react";
 import Link from "next/link";
-import { ArrowLeft, ExternalLink, Flag, Globe, HandCoins, Lightbulb, Mail, Share2, ShieldCheck, Users } from "lucide-react";
+import {
+	BadgeCheck,
+	ExternalLink,
+	Flag,
+	Globe,
+	HandCoins,
+	ImageOff,
+	Lightbulb,
+	Megaphone,
+	Share2,
+	ShieldCheck,
+	Users,
+} from "lucide-react";
 import { PROJECT_STAGE_LABEL, PROJECT_TYPE_LABEL, SUGGESTION_TYPE_LABEL } from "@repo/domain/labels";
 import { formatAmount } from "@repo/domain/money";
-import type { PublicProject } from "@repo/domain/types";
+import type { PublicProject, PublicProjectUpdate } from "@repo/domain/types";
 import { Button } from "@repo/ui/button";
 import { cn } from "@repo/ui/lib/utils";
 import { errorMessage } from "@/lib/api/errors";
@@ -14,18 +26,27 @@ import { withBasePath } from "@/lib/site";
 import { timeAgo } from "@/lib/time";
 import { notify } from "@/lib/use-toast";
 import { AddressChip } from "@/components/AddressChip";
+import { BackLink } from "@/components/BackLink";
+import { FundingDeadline } from "@/components/FundingDeadline";
+import { SocialLinks } from "@/components/SocialLinks";
 import { Pager } from "@/components/Pager";
 import { ProjectLogo } from "@/components/ProjectLogo";
 import { Progress } from "@/components/Progress";
 import { EmptyState, ErrorState } from "@/components/States";
 import { fundingProgress, raisedIn } from "@/features/projects/funding";
-import { PROJECT_CONTRIBUTIONS_PAGE, useProjectContributions, useProjectSuggestions } from "@/features/projects/hooks";
+import {
+	PROJECT_CONTRIBUTIONS_PAGE,
+	useProjectContributions,
+	useProjectSuggestions,
+	useProjectUpdates,
+} from "@/features/projects/hooks";
 import { ReportDialog, type ReportTarget } from "@/features/suggestions/components/ReportDialog";
 import { preloadWallets } from "@/features/wallet/kit";
 
 /**
  * Project details (`GET /projects/{slug}`): header, story, team, links and the builder's public profile, a funding
- * panel (confirmed totals per asset; a sticky Contribute bar on phones), and tabs for contributions and suggestions.
+ * panel (confirmed totals per asset, the deadline; a sticky Contribute bar on phones), and tabs for the builder's
+ * updates, contributions and suggestions.
  * The builder's Preview renders this same component with `preview` (nothing to fetch, buttons disabled).
  */
 
@@ -36,8 +57,11 @@ export function ProjectDetail({ project: p, preview = false }: { project: Public
 	const code = f?.targetAsset?.code ?? f?.acceptedAssets[0]?.code ?? "XLM";
 	const pct = fundingProgress(f);
 	const mainRaised = raisedIn(f, f?.targetAsset?.id ?? f?.acceptedAssets[0]?.id);
-	const otherRaised = (f?.raised ?? []).filter((r) => r.asset.id !== (f?.targetAsset?.id ?? f?.acceptedAssets[0]?.id) && r.amount !== "0");
-	const open = p.fundraisingEnabled && !!f && f.acceptedAssets.length > 0;
+	const otherRaised = (f?.raised ?? []).filter(
+		(r) => r.asset.id !== (f?.targetAsset?.id ?? f?.acceptedAssets[0]?.id) && r.amount !== "0",
+	);
+	const ended = !!f?.ended;
+	const open = p.fundraisingEnabled && !!f && f.acceptedAssets.length > 0 && !ended;
 	const builderName = p.builder.organizationName ?? p.builder.displayName ?? "A Chucksales builder";
 	const [reporting, setReporting] = useState<ReportTarget | null>(null);
 
@@ -73,7 +97,7 @@ export function ProjectDetail({ project: p, preview = false }: { project: Public
 				<div className="-mt-12 flex items-end justify-between gap-4 sm:-mt-14">
 					<ProjectLogo
 						title={p.title}
-						src={null}
+						src={p.logoUrl}
 						className="animate-pop size-24 text-2xl ring-4 ring-surface-900 sm:size-28 sm:text-3xl"
 					/>
 					{!preview && (
@@ -93,11 +117,7 @@ export function ProjectDetail({ project: p, preview = false }: { project: Public
 					)}
 				</div>
 
-				{!preview && (
-					<Link href={routes.projects} className="mt-4 inline-flex items-center gap-1.5 text-sm text-white/60 hover:text-white">
-						<ArrowLeft className="size-4" /> All projects
-					</Link>
-				)}
+				{!preview && <BackLink href={routes.projects} label="All projects" className="mt-3" />}
 
 				<div className="mt-3 grid gap-10 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-12">
 					<div className="min-w-0">
@@ -106,15 +126,16 @@ export function ProjectDetail({ project: p, preview = false }: { project: Public
 							{p.stage && (
 								<span className="rounded-full bg-white/[0.07] px-3 py-1 text-white/80">{PROJECT_STAGE_LABEL[p.stage]}</span>
 							)}
-							<span className="rounded-full bg-white/[0.07] px-3 py-1 text-white/80">
-								{PROJECT_TYPE_LABEL[p.type]}
-							</span>
+							<span className="rounded-full bg-white/[0.07] px-3 py-1 text-white/80">{PROJECT_TYPE_LABEL[p.type]}</span>
 							{p.featured && <span className="rounded-full bg-warning-400/15 px-3 py-1 text-warning-100">Featured</span>}
 						</div>
 						<h1 className="animate-rise mt-3 font-display text-[30px] leading-tight font-bold md:text-[40px]">{p.title}</h1>
-						<p className="animate-rise mt-1.5 text-white/60 [--i:1]">
-							by <span className="text-white/85">{builderName}</span>
-							{p.builder.organizationName && p.builder.displayName && <span> · {p.builder.displayName}</span>}
+						<p className="animate-rise mt-2 flex items-center gap-2 text-white/60 [--i:1]">
+							<ProjectLogo title={builderName} src={p.builder.avatarUrl} className="size-7 text-[10px]" />
+							<span>
+								by <span className="text-white/85">{builderName}</span>
+								{p.builder.organizationName && p.builder.displayName && <span> · {p.builder.displayName}</span>}
+							</span>
 						</p>
 						<p className="animate-rise mt-5 text-lg leading-8 text-white/90 [--i:2]">{p.summary || "No summary yet."}</p>
 
@@ -164,37 +185,15 @@ export function ProjectDetail({ project: p, preview = false }: { project: Public
 									</ul>
 								</section>
 							)}
-							{(p.builder.bio || p.builder.websiteUrl || p.builder.contactEmail) && (
-								<section data-reveal="up" className="rounded-2xl border border-white/10 bg-[#11121A] p-5">
-									<h2 className="font-display text-xl font-bold">About the builder</h2>
-									<p className="mt-1 text-white/85">{builderName}</p>
-									{p.builder.bio && <p className="mt-2 leading-7 whitespace-pre-line text-white/75">{p.builder.bio}</p>}
-									<div className="mt-3 flex flex-wrap gap-2">
-										{p.builder.websiteUrl && (
-											<a
-												href={p.builder.websiteUrl}
-												target="_blank"
-												rel="noopener noreferrer"
-												className="inline-flex h-9 items-center gap-2 rounded-full border border-white/15 px-3.5 text-sm text-white/85 hover:border-primary-400"
-											>
-												<Globe className="size-4" /> Website
-											</a>
-										)}
-										{p.builder.contactEmail && (
-											<a
-												href={`mailto:${p.builder.contactEmail}`}
-												className="inline-flex h-9 items-center gap-2 rounded-full border border-white/15 px-3.5 text-sm text-white/85 hover:border-primary-400"
-											>
-												<Mail className="size-4" /> {p.builder.contactEmail}
-											</a>
-										)}
-									</div>
-								</section>
-							)}
+							<BuilderCard builder={p.builder} name={builderName} />
 						</div>
 
 						<div className="mt-12">
-							{preview ? <PreviewTabs /> : <ProjectTabs slug={p.slug} onReport={(id) => setReporting({ kind: "suggestion", id })} />}
+							{preview ? (
+								<PreviewTabs />
+							) : (
+								<ProjectTabs slug={p.slug} onReport={(id) => setReporting({ kind: "suggestion", id })} />
+							)}
 						</div>
 					</div>
 
@@ -233,7 +232,8 @@ export function ProjectDetail({ project: p, preview = false }: { project: Public
 									) : (
 										<p className="mt-2 text-sm text-white/55">No target set</p>
 									)}
-									<dl className="mt-5 grid grid-cols-2 gap-3 text-sm">
+									<FundingDeadline funding={f} variant="detail" className="mt-4" />
+									<dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
 										<div className="rounded-xl bg-white/[0.04] px-3.5 py-3">
 											<dt className="flex items-center gap-1.5 text-white/55">
 												<Users className="size-3.5" aria-hidden /> Contributions
@@ -254,7 +254,7 @@ export function ProjectDetail({ project: p, preview = false }: { project: Public
 								</div>
 							)}
 							<div className="mt-5 hidden flex-col gap-2.5 lg:flex">
-								<ContributeButton href={contributeHref} open={open} preview={preview} />
+								<ContributeButton href={contributeHref} open={open} ended={ended} preview={preview} />
 								<Button asChild={!preview} variant="outline" className="h-12 gap-2 text-base" disabled={preview}>
 									{preview ? (
 										<span>
@@ -305,7 +305,7 @@ export function ProjectDetail({ project: p, preview = false }: { project: Public
 							</Link>
 						</Button>
 					)}
-					<ContributeButton href={contributeHref} open={open} preview={preview} compact />
+					<ContributeButton href={contributeHref} open={open} ended={ended} preview={preview} compact />
 				</div>
 			</div>
 			{reporting && <ReportDialog target={reporting} onClose={() => setReporting(null)} />}
@@ -316,18 +316,21 @@ export function ProjectDetail({ project: p, preview = false }: { project: Public
 function ContributeButton({
 	href,
 	open,
+	ended,
 	preview,
 	compact,
 }: {
 	href: string;
 	open: boolean;
+	ended: boolean;
 	preview: boolean;
 	compact?: boolean;
 }) {
 	if (!open || preview)
 		return (
 			<Button disabled className={cn("h-12 gap-2 text-base", compact && "w-auto shrink-0 px-5")}>
-				<HandCoins className="size-4" /> {preview ? "Contribute" : "Not accepting contributions"}
+				<HandCoins className="size-4" />{" "}
+				{preview ? "Contribute" : ended ? "Funding ended" : compact ? "Not accepting" : "Not accepting contributions"}
 			</Button>
 		);
 	return (
@@ -339,12 +342,46 @@ function ContributeButton({
 	);
 }
 
-type Tab = "contributions" | "suggestions";
+/** The builder's public profile: banner, avatar, bio, links and the wallet they proved they control. */
+function BuilderCard({ builder: b, name }: { builder: PublicProject["builder"]; name: string }) {
+	const hasLinks = !!(b.websiteUrl || b.contactEmail || b.socialLinks.length);
+	if (!b.bio && !hasLinks && !b.walletAddress && !b.avatarUrl) return null;
+	return (
+		<section data-reveal="up" className="overflow-hidden rounded-2xl border border-white/10 bg-[#11121A]">
+			<div className="relative h-24 bg-gradient-to-r from-primary-700/50 via-primary-500/20 to-transparent sm:h-28">
+				{b.bannerUrl && (
+					// eslint-disable-next-line @next/next/no-img-element
+					<img src={b.bannerUrl} alt="" className="absolute inset-0 size-full object-cover" />
+				)}
+			</div>
+			<div className="px-5 pb-5">
+				<ProjectLogo title={name} src={b.avatarUrl} className="-mt-8 size-16 text-lg ring-4 ring-[#11121A]" />
+				<h2 className="mt-3 font-display text-xl font-bold">About the builder</h2>
+				<p className="mt-0.5 text-white/85">
+					{name}
+					{b.organizationName && b.displayName && <span className="text-white/55"> · {b.displayName}</span>}
+				</p>
+				{b.bio && <p className="mt-3 leading-7 whitespace-pre-line text-white/75">{b.bio}</p>}
+				<SocialLinks websiteUrl={b.websiteUrl} contactEmail={b.contactEmail} socialLinks={b.socialLinks} className="mt-4" />
+				{b.walletAddress && (
+					<div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-white/[0.04] px-3.5 py-3 text-sm">
+						<span className="inline-flex items-center gap-1.5 text-success-100">
+							<BadgeCheck className="size-4" aria-hidden /> Verified builder wallet
+						</span>
+						<AddressChip value={b.walletAddress} className="text-white/85" />
+					</div>
+				)}
+			</div>
+		</section>
+	);
+}
+
+type Tab = "updates" | "contributions" | "suggestions";
 
 function TabBar({ tab, onTab, counts }: { tab: Tab; onTab: (t: Tab) => void; counts?: Partial<Record<Tab, number>> }) {
 	return (
 		<div role="tablist" aria-label="Project activity" className="flex gap-1 border-b border-white/10">
-			{(["contributions", "suggestions"] as Tab[]).map((t) => (
+			{(["updates", "contributions", "suggestions"] as Tab[]).map((t) => (
 				<button
 					key={t}
 					type="button"
@@ -376,19 +413,20 @@ function TabBar({ tab, onTab, counts }: { tab: Tab; onTab: (t: Tab) => void; cou
 function PreviewTabs() {
 	return (
 		<>
-			<TabBar tab="contributions" onTab={() => undefined} />
+			<TabBar tab="updates" onTab={() => undefined} />
 			<p className="mt-6 rounded-xl border border-dashed border-white/15 px-5 py-8 text-center text-sm text-white/55">
-				Contributions and suggestions appear here once the project is approved and listed.
+				Your updates, contributions and suggestions appear here once the project is approved and listed.
 			</p>
 		</>
 	);
 }
 
 function ProjectTabs({ slug, onReport }: { slug: string; onReport: (suggestionId: string) => void }) {
-	const [tab, setTab] = useState<Tab>("contributions");
+	const [tab, setTab] = useState<Tab>("updates");
 	const [page, setPage] = useState(1);
 	const contributions = useProjectContributions(slug, page);
 	const suggestions = useProjectSuggestions(slug);
+	const updates = useProjectUpdates(slug);
 
 	return (
 		<>
@@ -396,11 +434,48 @@ function ProjectTabs({ slug, onReport }: { slug: string; onReport: (suggestionId
 				tab={tab}
 				onTab={setTab}
 				counts={{
+					updates: updates.data?.pages[0]?.paginationMeta.totalCount,
 					contributions: contributions.data?.paginationMeta.totalCount,
 					suggestions: suggestions.data?.paginationMeta.totalCount,
 				}}
 			/>
 			<div role="tabpanel" className="mt-6">
+				{tab === "updates" &&
+					(updates.isPending ? (
+						<ListSkeleton />
+					) : updates.isError ? (
+						<ErrorState message={errorMessage(updates.error)} onRetry={() => void updates.refetch()} />
+					) : updates.data.pages[0]!.result.length === 0 ? (
+						<EmptyState title="No updates yet" description="The builder’s progress reports will appear here." />
+					) : (
+						<>
+							<ol className="relative flex flex-col gap-5 border-l border-white/10 pl-5 md:pl-6">
+								{updates.data.pages
+									.flatMap((pg) => pg.result)
+									.map((u, i) => (
+										<li key={u.id} data-reveal="up" style={d(i % 4)} className="relative">
+											<span
+												aria-hidden
+												className="absolute top-2 -left-[25px] size-2.5 rounded-full bg-primary-400 ring-4 ring-surface-900 md:-left-[29px]"
+											/>
+											<UpdateArticle update={u} />
+										</li>
+									))}
+							</ol>
+							{updates.hasNextPage && (
+								<Button
+									variant="outline"
+									className="mt-5 w-auto px-5"
+									isLoading={updates.isFetchingNextPage}
+									loadingLabel="Loading older updates"
+									onClick={() => void updates.fetchNextPage()}
+								>
+									Load older updates
+								</Button>
+							)}
+						</>
+					))}
+
 				{tab === "contributions" &&
 					(contributions.isPending ? (
 						<ListSkeleton />
@@ -502,9 +577,38 @@ function ProjectTabs({ slug, onReport }: { slug: string; onReport: (suggestionId
 							))}
 						</ul>
 					))}
-
 			</div>
 		</>
+	);
+}
+
+/** One update: plain text (never HTML), line breaks kept, optional image (a signed link that expires). */
+export function UpdateArticle({ update: u, className }: { update: PublicProjectUpdate; className?: string }) {
+	const [broken, setBroken] = useState(false);
+	return (
+		<article className={cn("rounded-2xl border border-white/10 bg-[#11121A] p-5", className)}>
+			<p className="flex items-center gap-1.5 text-xs text-white/50">
+				<Megaphone className="size-3.5" aria-hidden /> {timeAgo(u.createdAt)}
+				{u.updatedAt !== u.createdAt && <span>· edited</span>}
+			</p>
+			<h3 className="mt-1.5 font-display text-lg font-bold break-words">{u.title}</h3>
+			<p className="mt-2 leading-7 break-words whitespace-pre-line text-white/80">{u.body}</p>
+			{u.imageUrl &&
+				(broken ? (
+					<p className="mt-3 flex items-center gap-2 text-xs text-white/45">
+						<ImageOff className="size-4" aria-hidden /> Image unavailable. Reload the page to see it.
+					</p>
+				) : (
+					// eslint-disable-next-line @next/next/no-img-element
+					<img
+						src={u.imageUrl}
+						alt=""
+						loading="lazy"
+						onError={() => setBroken(true)}
+						className="mt-4 max-h-[420px] w-full rounded-xl object-cover"
+					/>
+				))}
+		</article>
 	);
 }
 

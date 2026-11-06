@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { withBasePath } from "@/lib/site";
 import { Logo } from "@/components/Logo";
+import { AuthBack } from "@/features/builder-auth/components/AuthBack";
 
 /**
  * Designs A1–A4: the glass-cube art fills the left half; the form sits centred on the dark right half (~414px).
@@ -18,8 +19,9 @@ export function AuthShell({ children }: { children: ReactNode }) {
 					aria-hidden
 					className="absolute -top-40 -right-40 -z-10 size-[420px] rounded-full bg-primary-500/15 blur-[90px] lg:hidden"
 				/>
-				<header className="flex h-[68px] items-center px-5 sm:px-8 md:h-[90px]">
+				<header className="flex h-[68px] items-center justify-between gap-4 px-5 sm:px-8 md:h-[90px]">
 					<Logo />
+					<AuthBack />
 				</header>
 				<main className="flex flex-1 items-start justify-center px-5 pt-6 pb-16 sm:px-8 lg:items-center lg:pt-0">
 					<div className="animate-page w-full max-w-[414px]">{children}</div>

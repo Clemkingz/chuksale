@@ -17,6 +17,7 @@ import { useContribution } from "@/features/contributions/hooks";
 import { useConnectedWallet } from "@/features/wallet/hooks";
 import { useWalletDialog } from "@/features/wallet/dialog-store";
 import { STATUS_TONE } from "@/features/contributions/components/StatusPill";
+import { BackLink } from "@/components/BackLink";
 
 /**
  * /contributions/[id] (backend guide, "Contributions" step 5): Pending (polls every 4 s, announced politely) →
@@ -73,6 +74,10 @@ export function ContributionStatusView({ id }: { id: string }) {
 
 	return (
 		<div className="app-container max-w-[760px] py-10 md:py-14">
+			<div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+				{c.project.slug ? <BackLink href={routes.project(c.project.slug)} label={c.project.title} /> : <span />}
+				<BackLink href={routes.wallet} label="My wallet" className="[&>svg]:hidden" />
+			</div>
 			<StatusHeader c={c} />
 			<section aria-label="Receipt" className="animate-rise mt-6 rounded-[24px] bg-[#16161B] px-5 py-6 [--i:1] sm:px-8 md:py-8">
 				<div className="flex items-center gap-4">

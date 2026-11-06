@@ -9,6 +9,7 @@ import type {
 	ProjectAction,
 	ProjectInsights,
 	ProjectStatus,
+	ProjectUpdate,
 	Revision,
 	RevisionSummary,
 } from "@repo/domain/types";
@@ -55,7 +56,8 @@ export function useStatusCount(status: ProjectStatus) {
 	return useQuery({
 		queryKey: ["admin", "projects", "count", status],
 		queryFn: async () =>
-			unwrap<Page<AdminProjectSummary>>(await api.get("/admin/projects", { params: { status, limit: 1 } })).paginationMeta.totalCount,
+			unwrap<Page<AdminProjectSummary>>(await api.get("/admin/projects", { params: { status, limit: 1 } })).paginationMeta
+				.totalCount,
 	});
 }
 
@@ -140,5 +142,26 @@ export function useSetCategory() {
 		mutationFn: async (v: { id: string; categoryId: string }) =>
 			unwrap<AdminProject>(await api.patch(`/admin/projects/${v.id}`, { categoryId: v.categoryId })),
 		onSuccess: invalidate,
+	});
+}
+
+// ---------------------------------------------------------------- project updates
+
+/** Every update on a project, removed ones included (newest first). */
+export function useAdminProjectUpdates(id: string, enabled = true) {
+	return useQuery({
+		queryKey: ["admin", "projects", "updates", id],
+		enabled,
+		queryFn: async () => unwrap<Page<ProjectUpdate>>(await api.get(`/admin/projects/${id}/updates`, { params: { limit: 100 } })),
+	});
+}
+
+/** Hides an update from the public; the builder sees the reason and gets a `project_update_removed` notification. */
+export function useRemoveUpdate(projectId: string) {
+	const qc = useQueryClient();
+	return useMutation({
+		mutationFn: async (v: { id: string; reason: string }) =>
+			unwrap<ProjectUpdate>(await api.post(`/admin/project-updates/${v.id}/remove`, { reason: v.reason })),
+		onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "projects", "updates", projectId] }),
 	});
 }

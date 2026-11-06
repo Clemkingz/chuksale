@@ -13,6 +13,7 @@ import { notify } from "@/lib/use-toast";
 import { FormError, TextField } from "@/components/forms/Fields";
 import { useCreateProject } from "@/features/builder-projects/hooks";
 import { addProjectSchema, type AddProjectValues } from "@/features/builder-projects/schema";
+import { BackLink } from "@/components/BackLink";
 
 /**
  * Design "Dev add project 2", tailored to the API: a project starts as a private draft with just a type and a
@@ -54,7 +55,8 @@ export function AddProjectForm() {
 	);
 
 	return (
-		<div className="app-container py-10 md:py-[72px]">
+		<div className="app-container py-8 md:py-12">
+			<BackLink href={routes.dashboard} label="Dashboard" className="mx-auto flex w-full max-w-[670px]" />
 			<section
 				aria-labelledby="add-project-title"
 				className="animate-rise mx-auto w-full max-w-[670px] rounded-[24px] bg-[#16161B] px-5 py-8 sm:px-8 md:rounded-[26px] md:px-10 md:py-10"

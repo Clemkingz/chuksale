@@ -17,10 +17,10 @@ import { useMarkAllRead, useMarkRead, useNotifications, useUnreadCount } from "@
  */
 export function NotificationPanel() {
 	const [open, setOpen] = useState(false);
-	const { data: count = 0 } = useUnreadCount();
-	const list = useNotifications("all", 6);
-	const markRead = useMarkRead();
-	const markAll = useMarkAllRead();
+	const { data: count = 0 } = useUnreadCount("builder");
+	const list = useNotifications("builder", "all", 6);
+	const markRead = useMarkRead("builder");
+	const markAll = useMarkAllRead("builder");
 	const items = list.data?.pages[0]?.result ?? [];
 
 	return (
@@ -71,7 +71,7 @@ export function NotificationPanel() {
 						<ul className="divide-y divide-white/5">
 							{items.map((n) => {
 								const bad = NOTIFICATION_META[n.type]?.tone === "bad";
-								const href = notificationHref(n);
+								const href = notificationHref(n, "builder");
 								const content = (
 									<>
 										<span
@@ -87,7 +87,8 @@ export function NotificationPanel() {
 													className={cn(
 														"mt-1.5 line-clamp-3 block text-[13px] leading-5 break-words whitespace-pre-line text-white/80",
 														isDecision(n) && "rounded-md border-l-2 px-2.5 py-1.5",
-														isDecision(n) && (bad ? "border-error-300 bg-error-400/[0.08]" : "border-warning-300 bg-warning-400/[0.07]"),
+														isDecision(n) &&
+															(bad ? "border-error-300 bg-error-400/[0.08]" : "border-warning-300 bg-warning-400/[0.07]"),
 													)}
 												>
 													{n.body}
@@ -107,11 +108,7 @@ export function NotificationPanel() {
 								return (
 									<li key={n.id}>
 										{href ? (
-											<Link
-												href={href}
-												onClick={onOpen}
-												className="flex gap-3 px-4 py-3 transition-colors hover:bg-white/[0.04]"
-											>
+											<Link href={href} onClick={onOpen} className="flex gap-3 px-4 py-3 transition-colors hover:bg-white/[0.04]">
 												{content}
 											</Link>
 										) : (

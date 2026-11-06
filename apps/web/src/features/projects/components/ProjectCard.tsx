@@ -7,6 +7,7 @@ import type { PublicProjectCard } from "@repo/domain/types";
 import { cn } from "@repo/ui/lib/utils";
 import { routes } from "@/lib/routes";
 import { withBasePath } from "@/lib/site";
+import { FundingDeadline } from "@/components/FundingDeadline";
 import { ProjectLogo } from "@/components/ProjectLogo";
 import { Progress } from "@/components/Progress";
 import { fundingProgress, raisedIn } from "@/features/projects/funding";
@@ -35,12 +36,7 @@ export function ProjectCard({ project: p, index = 0 }: { project: PublicProjectC
 				href={routes.project(p.slug)}
 				className="group flex h-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#11121A] transition-[border-color,transform,box-shadow] duration-300 ease-(--ease-settle) hover:-translate-y-1 hover:border-primary-500/50 hover:shadow-2xl hover:shadow-primary-500/10 focus-visible:ring-2 focus-visible:ring-primary-400 focus-visible:outline-none"
 			>
-				<div
-					className={cn(
-						"relative h-28 bg-gradient-to-br to-transparent",
-						tintFor(p.category.slug),
-					)}
-				>
+				<div className={cn("relative h-28 bg-gradient-to-br to-transparent", tintFor(p.category.slug))}>
 					{p.coverImageUrl ? (
 						// eslint-disable-next-line @next/next/no-img-element
 						<img src={p.coverImageUrl} alt="" className="absolute inset-0 size-full object-cover" />
@@ -51,7 +47,7 @@ export function ProjectCard({ project: p, index = 0 }: { project: PublicProjectC
 							style={{ backgroundImage: `url(${withBasePath("/images/grid.webp")})` }}
 						/>
 					)}
-					<div className="absolute top-3 right-3 flex gap-1.5">
+					<div className="absolute top-3 right-3 flex flex-wrap justify-end gap-1.5">
 						{p.featured && (
 							<span className="rounded-full bg-black/40 px-2.5 py-1 text-xs text-white backdrop-blur">Featured</span>
 						)}
@@ -60,10 +56,11 @@ export function ProjectCard({ project: p, index = 0 }: { project: PublicProjectC
 								Target reached
 							</span>
 						)}
+						<FundingDeadline funding={f} />
 					</div>
 					<ProjectLogo
 						title={p.title}
-						src={null}
+						src={p.logoUrl}
 						className="absolute -bottom-6 left-5 size-14 text-base ring-4 ring-[#11121A]"
 					/>
 				</div>
@@ -71,7 +68,14 @@ export function ProjectCard({ project: p, index = 0 }: { project: PublicProjectC
 					<h3 className="font-display text-lg leading-snug font-bold transition-colors group-hover:text-primary-300">
 						{p.title}
 					</h3>
-					<p className="mt-1 text-sm text-white/55">by {p.builder.organizationName ?? p.builder.displayName ?? "a Chucksales builder"}</p>
+					<p className="mt-1.5 flex items-center gap-2 text-sm text-white/55">
+						<ProjectLogo
+							title={p.builder.organizationName ?? p.builder.displayName ?? "Builder"}
+							src={p.builder.avatarUrl}
+							className="size-5 text-[9px]"
+						/>
+						<span className="truncate">by {p.builder.organizationName ?? p.builder.displayName ?? "a Chucksales builder"}</span>
+					</p>
 					<p className="mt-3 line-clamp-2 text-[15px] leading-6 text-white/80">{p.summary}</p>
 					<div className="mt-4 flex flex-wrap gap-1.5 text-xs">
 						<span className="rounded-full bg-white/[0.06] px-2.5 py-1 text-white/75">{p.category.name}</span>
@@ -91,8 +95,8 @@ export function ProjectCard({ project: p, index = 0 }: { project: PublicProjectC
 								</div>
 								<Progress percent={pct} className="mt-2" />
 								<p className="mt-2.5 flex items-center gap-1.5 text-xs text-white/50">
-									<Users className="size-3.5" aria-hidden /> {f.contributionCount} contribution{f.contributionCount === 1 ? "" : "s"} ·
-									Accepts {f.acceptedAssets.map((a) => a.code).join(" / ")}
+									<Users className="size-3.5" aria-hidden /> {f.contributionCount} contribution
+									{f.contributionCount === 1 ? "" : "s"} · Accepts {f.acceptedAssets.map((a) => a.code).join(" / ")}
 								</p>
 							</>
 						) : (

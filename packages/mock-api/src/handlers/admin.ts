@@ -4,17 +4,7 @@ import { read, update } from "../db";
 import type { MockDb, ProjectRec, UserRec } from "../records";
 import { HttpError, invalid, ok, route } from "../router";
 import { uuid } from "../util";
-import {
-	adminProjectDto,
-	adminSummaryDto,
-	audit,
-	boolParam,
-	event,
-	insightsFor,
-	notifyUser,
-	now,
-	page,
-} from "./admin-shared";
+import { adminProjectDto, adminSummaryDto, audit, boolParam, event, insightsFor, notifyUser, now, page } from "./admin-shared";
 
 /** Admin routes (backend guide, "Admin area" and "Admin: review queue and actions"). Builders get 403. */
 
@@ -57,9 +47,17 @@ route("GET", "/admin/projects", "admin", ({ query }) => {
 	if (boolParam(query, "published") !== undefined) list = list.filter((p) => p.published === boolParam(query, "published"));
 	if (boolParam(query, "featured") !== undefined) list = list.filter((p) => p.featured === boolParam(query, "featured"));
 	list.sort((a, b) =>
-		sort === "oldest_submitted" ? (a.submittedAt ?? "").localeCompare(b.submittedAt ?? "") : b.updatedAt.localeCompare(a.updatedAt),
+		sort === "oldest_submitted"
+			? (a.submittedAt ?? "").localeCompare(b.submittedAt ?? "")
+			: b.updatedAt.localeCompare(a.updatedAt),
 	);
-	return ok(page(list.map((p) => adminSummaryDto(db, p)), query), "Projects retrieved");
+	return ok(
+		page(
+			list.map((p) => adminSummaryDto(db, p)),
+			query,
+		),
+		"Projects retrieved",
+	);
 });
 
 route("GET", "/admin/projects/:id", "admin", ({ params }) => {
@@ -80,7 +78,15 @@ route("PATCH", "/admin/projects/:id", "admin", ({ params, body, user }) =>
 	}),
 );
 
-const NOTICE: Partial<Record<ProjectAction, { type: "project_approved" | "project_rejected" | "project_changes_requested" | "project_archived"; title: (t: string) => string }>> = {
+const NOTICE: Partial<
+	Record<
+		ProjectAction,
+		{
+			type: "project_approved" | "project_rejected" | "project_changes_requested" | "project_archived";
+			title: (t: string) => string;
+		}
+	>
+> = {
 	approve: { type: "project_approved", title: (t) => `${t} was approved and is now live` },
 	reject: { type: "project_rejected", title: (t) => `${t} was rejected` },
 	request_changes: { type: "project_changes_requested", title: (t) => `Changes requested on ${t}` },
@@ -90,7 +96,9 @@ const NOTICE: Partial<Record<ProjectAction, { type: "project_approved" | "projec
 route("POST", "/admin/projects/:id/actions", "admin", ({ params, body, user }) => {
 	const action = body.action as ProjectAction;
 	if (!(action in PROJECT_ACTION_RULES))
-		throw invalid(["action must be one of: start_review, approve, reject, request_changes, publish, unpublish, archive, feature, unfeature"]);
+		throw invalid([
+			"action must be one of: start_review, approve, reject, request_changes, publish, unpublish, archive, feature, unfeature",
+		]);
 	const reason = typeof body.reason === "string" ? body.reason.trim() : "";
 	const internalNote = typeof body.internalNote === "string" ? body.internalNote.trim() : "";
 	if (actionRequiresReason(action) && !reason) throw invalid(["reason is required for this action"]);
@@ -102,7 +110,11 @@ route("POST", "/admin/projects/:id/actions", "admin", ({ params, body, user }) =
 			(rule.published === undefined || rule.published === p.published) &&
 			!(action === "feature" && p.featured) &&
 			!(action === "unfeature" && !p.featured);
-		if (!allowed) throw new HttpError(409, `Cannot ${action.replace("_", " ")} a project that is ${p.published && p.status === "approved" ? "published" : p.status.replace("_", " ")}`);
+		if (!allowed)
+			throw new HttpError(
+				409,
+				`Cannot ${action.replace("_", " ")} a project that is ${p.published && p.status === "approved" ? "published" : p.status.replace("_", " ")}`,
+			);
 		const before = { status: p.status, published: p.published, featured: p.featured };
 		const from = p.status;
 		const to: Record<ProjectAction, ProjectStatus> = {
@@ -128,10 +140,10 @@ route("POST", "/admin/projects/:id/actions", "admin", ({ params, body, user }) =
 			event(db, "project_review_decided", { projectId: p.id });
 		}
 		if (action === "publish") p.published = true;
-		if (action === "unpublish") (p.published = false), (p.featured = false);
+		if (action === "unpublish") ((p.published = false), (p.featured = false));
 		if (action === "feature") p.featured = true;
 		if (action === "unfeature") p.featured = false;
-		if (action === "archive") (p.published = false), (p.featured = false);
+		if (action === "archive") ((p.published = false), (p.featured = false));
 		p.updatedAt = now();
 		db.reviews.push({
 			id: (db.reviews.reduce((m, r) => Math.max(m, r.id), 0) || 0) + 1,
@@ -146,8 +158,22 @@ route("POST", "/admin/projects/:id/actions", "admin", ({ params, body, user }) =
 			at: now(),
 		});
 		const n = NOTICE[action];
-		if (n) notifyUser(db, p.ownerId, n.type, n.title(p.title), reason || "Congratulations! Your project is live and can receive contributions.", p.id);
-		audit(db, user!.id, `project.${action}`, { type: "project", id: p.id }, { metadata: reason ? { reason } : {}, before, after: { status: p.status, published: p.published, featured: p.featured } });
+		if (n)
+			notifyUser(
+				db,
+				p.ownerId,
+				n.type,
+				n.title(p.title),
+				reason || "Congratulations! Your project is live and can receive contributions.",
+				p.id,
+			);
+		audit(
+			db,
+			user!.id,
+			`project.${action}`,
+			{ type: "project", id: p.id },
+			{ metadata: reason ? { reason } : {}, before, after: { status: p.status, published: p.published, featured: p.featured } },
+		);
 		return ok(adminProjectDto(db, p), "Action applied");
 	});
 });
@@ -167,7 +193,10 @@ route("GET", "/admin/projects/:id/revisions", "admin", ({ params }) => {
 route("GET", "/admin/projects/:id/revisions/:revision", "admin", ({ params }) => {
 	const r = read().revisions.find((x) => x.projectId === params.id && x.revision === Number(params.revision));
 	if (!r) throw new HttpError(404, "Revision not found");
-	return ok({ revision: r.revision, submittedBy: r.submittedBy, submittedAt: r.submittedAt, snapshot: r.snapshot }, "Revision retrieved");
+	return ok(
+		{ revision: r.revision, submittedBy: r.submittedBy, submittedAt: r.submittedAt, snapshot: r.snapshot },
+		"Revision retrieved",
+	);
 });
 
 route("GET", "/admin/analytics/projects/:id", "admin", ({ params, query }) => {
@@ -192,8 +221,15 @@ route("POST", "/admin/categories", "admin", ({ body, user }) => {
 	if (name.length < 2 || name.length > 60) throw invalid(["name must be 2 to 60 characters"]);
 	return update((db) => {
 		const slug = typeof body.slug === "string" && body.slug ? body.slug : slugify(name);
-		if (db.categories.some((c) => c.slug === slug || c.name.toLowerCase() === name.toLowerCase())) throw new HttpError(409, "A category with that name or slug already exists");
-		const c = { id: uuid(), name, slug, isActive: true, sortOrder: typeof body.sortOrder === "number" ? body.sortOrder : db.categories.length + 1 };
+		if (db.categories.some((c) => c.slug === slug || c.name.toLowerCase() === name.toLowerCase()))
+			throw new HttpError(409, "A category with that name or slug already exists");
+		const c = {
+			id: uuid(),
+			name,
+			slug,
+			isActive: true,
+			sortOrder: typeof body.sortOrder === "number" ? body.sortOrder : db.categories.length + 1,
+		};
 		db.categories.push(c);
 		audit(db, user!.id, "category.create", { type: "category", id: c.id }, { after: c });
 		return ok({ ...c, projectCount: 0 }, "Category created", 201);
@@ -236,7 +272,8 @@ route("GET", "/admin/users", "admin", ({ query }) => {
 	if (q) list = list.filter((u) => `${u.name} ${u.email}`.toLowerCase().includes(q));
 	if (query.get("role")) list = list.filter((u) => u.role === query.get("role"));
 	if (boolParam(query, "suspended") !== undefined) list = list.filter((u) => !!u.suspension === boolParam(query, "suspended"));
-	if (boolParam(query, "emailVerified") !== undefined) list = list.filter((u) => u.emailVerified === boolParam(query, "emailVerified"));
+	if (boolParam(query, "emailVerified") !== undefined)
+		list = list.filter((u) => u.emailVerified === boolParam(query, "emailVerified"));
 	return ok(page(list.map(summary), query), "Users retrieved");
 });
 
@@ -249,11 +286,26 @@ route("POST", "/admin/users", "admin", ({ body, user }) => {
 	if (problems.length) throw invalid(problems);
 	return update((db) => {
 		if (db.users.some((u) => u.email === email)) throw new HttpError(409, "An account with this email already exists");
-		const u: UserRec = { id: uuid(), email, name, role: "admin", password: `unset-${uuid()}`, emailVerified: true, suspension: null, profile: null, createdAt: now() };
+		const u: UserRec = {
+			id: uuid(),
+			email,
+			name,
+			role: "admin",
+			password: `unset-${uuid()}`,
+			emailVerified: true,
+			suspension: null,
+			avatarUrl: null,
+			profile: null,
+			createdAt: now(),
+		};
 		db.users.push(u);
 		db.otps.push({ email, purpose: "reset", at: Date.now() });
 		audit(db, user!.id, "admin.create", { type: "user", id: u.id }, { after: summary(u) });
-		return ok({ id: u.id, email, name, role: "admin", createdAt: u.createdAt, otpExpiresInSeconds: 86_400 }, "Admin created", 201);
+		return ok(
+			{ id: u.id, email, name, role: "admin", createdAt: u.createdAt, otpExpiresInSeconds: 86_400 },
+			"Admin created",
+			201,
+		);
 	});
 });
 
@@ -311,7 +363,9 @@ route("GET", "/admin/overview", "admin", () => {
 			reportsOpen: db.reports.filter((r) => r.status === "open").length,
 		},
 		contributions: {
-			stuckPending: db.contributions.filter((c) => c.status === "pending" && c.submittedAt && Date.now() - Date.parse(c.submittedAt) > 10 * 60_000).length,
+			stuckPending: db.contributions.filter(
+				(c) => c.status === "pending" && c.submittedAt && Date.now() - Date.parse(c.submittedAt) > 10 * 60_000,
+			).length,
 			stuckAfterMinutes: 10,
 			confirmed24h: db.contributions.filter((c) => c.status === "confirmed" && in24(c.confirmedAt)).length,
 			failed24h: db.contributions.filter((c) => c.status === "failed" && in24(c.updatedAt)).length,
@@ -380,7 +434,11 @@ route("GET", "/admin/analytics", "admin", ({ query }) => {
 		to: to.toISOString(),
 		events,
 		metrics: {
-			submissionCompletion: { rate: rate(events.project_submitted, events.project_draft_created), draftsCreated: events.project_draft_created, submitted: events.project_submitted },
+			submissionCompletion: {
+				rate: rate(events.project_submitted, events.project_draft_created),
+				draftsCreated: events.project_draft_created,
+				submitted: events.project_submitted,
+			},
 			reviewTurnaround: { decisions: decisions.length, medianHours: hours.length ? hours[Math.floor(hours.length / 2)]! : null },
 			approvalToFunding: { rate: rate(funded.length, approved.length), approved: approved.length, funded: funded.length },
 			contributions: { ...c, successRate: rate(c.confirmed, c.submitted), failedTransactionRate: rate(c.failed, c.submitted) },

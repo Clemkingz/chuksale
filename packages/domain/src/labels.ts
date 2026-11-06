@@ -6,6 +6,7 @@ import type {
 	ProjectType,
 	ReportReason,
 	ReportStatus,
+	SocialPlatform,
 	SuggestionStatus,
 	SuggestionType,
 } from "./types";
@@ -84,4 +85,16 @@ export const REPORT_STATUS_LABEL: Record<ReportStatus, string> = {
 	open: "Open",
 	resolved: "Resolved",
 	dismissed: "Dismissed",
+};
+
+export const SOCIAL_PLATFORM_LABEL: Record<SocialPlatform, string> = {
+	x: "X",
+	github: "GitHub",
+	linkedin: "LinkedIn",
+	discord: "Discord",
+	telegram: "Telegram",
+	youtube: "YouTube",
+	instagram: "Instagram",
+	facebook: "Facebook",
+	other: "Link",
 };

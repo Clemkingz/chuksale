@@ -3,7 +3,7 @@ import { read, update } from "../db";
 import type { MockDb, SuggestionRec } from "../records";
 import { HttpError, NoContent, invalid, ok, route } from "../router";
 import { uuid } from "../util";
-import { audit, event, isAddress, isPublic, now, page, rateLimit } from "../common";
+import { audit, event, isAddress, isPublic, notifyWallet, now, page, rateLimit } from "../common";
 
 /** Suggestions, reports and moderation (backend guide, "Suggestions and reports"). Text is stored as plain text. */
 
@@ -12,7 +12,11 @@ const REASONS: ReportReason[] = ["spam", "abuse", "misleading", "scam", "other"]
 
 function restricted(db: MockDb, wallet: string) {
 	const r = db.restrictions.find((x) => x.address === wallet && (!x.until || Date.parse(x.until) > Date.now()));
-	if (r) throw new HttpError(403, `This wallet can’t post right now: ${r.reason}${r.until ? ` (until ${new Date(r.until).toLocaleDateString("en-GB")})` : ""}`);
+	if (r)
+		throw new HttpError(
+			403,
+			`This wallet can’t post right now: ${r.reason}${r.until ? ` (until ${new Date(r.until).toLocaleDateString("en-GB")})` : ""}`,
+		);
 }
 
 const projectRef = (db: MockDb, id: string) => {
@@ -42,7 +46,9 @@ const adminDto = (db: MockDb, s: SuggestionRec) => ({
 
 const detailDto = (db: MockDb, s: SuggestionRec) => ({
 	...adminDto(db, s),
-	reports: db.reports.filter((r) => r.entityType === "suggestion" && r.entityId === s.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+	reports: db.reports
+		.filter((r) => r.entityType === "suggestion" && r.entityId === s.id)
+		.sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
 });
 
 route("POST", "/projects/:slug/suggestions", "wallet", ({ params, body, wallet }) => {
@@ -50,7 +56,8 @@ route("POST", "/projects/:slug/suggestions", "wallet", ({ params, body, wallet }
 	const title = typeof body.title === "string" ? body.title.trim() : "";
 	const text = typeof body.body === "string" ? body.body.trim() : "";
 	const link = typeof body.link === "string" ? body.link.trim() : "";
-	if (!TYPES.includes(body.type as SuggestionType)) problems.push("type must be one of: product_improvement, technical_feedback, community_marketing, other");
+	if (!TYPES.includes(body.type as SuggestionType))
+		problems.push("type must be one of: product_improvement, technical_feedback, community_marketing, other");
 	if (title.length < 5 || title.length > 120 || /\n/.test(title)) problems.push("title must be 5 to 120 characters on one line");
 	if (text.length < 20 || text.length > 2000) problems.push("body must be 20 to 2000 characters");
 	if (link && !/^https:\/\/\S+\.\S+/.test(link)) problems.push("link must be an https URL");
@@ -91,9 +98,13 @@ route("GET", "/suggestions/mine", "wallet", ({ wallet, query }) => {
 	return ok(page(list, query), "Suggestions retrieved");
 });
 
-function report(entityType: "suggestion" | "project", find: (db: MockDb) => { id: string; title: string; ownWallet?: string } | null) {
+function report(
+	entityType: "suggestion" | "project",
+	find: (db: MockDb) => { id: string; title: string; ownWallet?: string } | null,
+) {
 	return ({ body, wallet }: { body: Record<string, unknown>; wallet: string | null }) => {
-		if (!REASONS.includes(body.reason as ReportReason)) throw invalid(["reason must be one of: spam, abuse, misleading, scam, other"]);
+		if (!REASONS.includes(body.reason as ReportReason))
+			throw invalid(["reason must be one of: spam, abuse, misleading, scam, other"]);
 		const details = typeof body.details === "string" ? body.details.trim().slice(0, 1000) : "";
 		return update((db) => {
 			const target = find(db);
@@ -146,7 +157,10 @@ route("GET", "/admin/suggestions", "admin", ({ query }) => {
 	if (query.get("projectId")) list = list.filter((s) => s.projectId === query.get("projectId"));
 	if (query.get("address")) list = list.filter((s) => s.walletAddress === query.get("address"));
 	const dtos = list.map((s) => adminDto(db, s));
-	return ok(page(query.get("reported") === "true" ? dtos.filter((s) => s.openReportCount > 0) : dtos, query), "Suggestions retrieved");
+	return ok(
+		page(query.get("reported") === "true" ? dtos.filter((s) => s.openReportCount > 0) : dtos, query),
+		"Suggestions retrieved",
+	);
 });
 
 route("GET", "/admin/suggestions/:id", "admin", ({ params }) => {
@@ -164,7 +178,12 @@ route("POST", "/admin/suggestions/:id/actions", "admin", ({ params, body, user }
 	return update((db) => {
 		const s = db.suggestions.find((x) => x.id === params.id);
 		if (!s) throw new HttpError(404, "Suggestion not found");
-		const allowed = action === "approve" ? s.status === "pending" || s.status === "hidden" : action === "reject" ? s.status === "pending" : s.status === "published";
+		const allowed =
+			action === "approve"
+				? s.status === "pending" || s.status === "hidden"
+				: action === "reject"
+					? s.status === "pending"
+					: s.status === "published";
 		if (!allowed) throw new HttpError(409, `Cannot ${action} a suggestion that is ${s.status}`);
 		const before = { status: s.status };
 		s.status = action === "approve" ? "published" : action === "reject" ? "rejected" : "hidden";
@@ -175,7 +194,25 @@ route("POST", "/admin/suggestions/:id/actions", "admin", ({ params, body, user }
 		for (const r of db.reports.filter((x) => x.entityType === "suggestion" && x.entityId === s.id && x.status === "open"))
 			Object.assign(r, { status: "resolved", resolvedBy: user!.id, resolvedAt: now(), resolutionNote: `Suggestion ${s.status}` });
 		event(db, "suggestion_moderated", { projectId: s.projectId });
-		audit(db, user!.id, `suggestion.${action}`, { type: "suggestion", id: s.id }, { metadata: note ? { note } : {}, before, after: { status: s.status } });
+		const title = db.projects.find((p) => p.id === s.projectId)?.title ?? "a project";
+		const notice = {
+			published: [
+				"suggestion_published",
+				`Your suggestion on ${title} is public`,
+				`“${s.title}” is now visible on the project page.`,
+			],
+			rejected: ["suggestion_rejected", `Your suggestion on ${title} wasn’t published`, note],
+			hidden: ["suggestion_hidden", `Your suggestion on ${title} was hidden`, note],
+		} as const;
+		const [type, nTitle, nBody] = notice[s.status as "published" | "rejected" | "hidden"];
+		notifyWallet(db, s.walletAddress, type, nTitle, nBody, s.projectId);
+		audit(
+			db,
+			user!.id,
+			`suggestion.${action}`,
+			{ type: "suggestion", id: s.id },
+			{ metadata: note ? { note } : {}, before, after: { status: s.status } },
+		);
 		return ok(detailDto(db, s), "Suggestion moderated");
 	});
 });
@@ -210,7 +247,8 @@ route("PUT", "/admin/wallet-restrictions/:address", "admin", ({ params, body, us
 	if (!isAddress(params.address)) throw invalid(["address must be a Stellar public key"]);
 	const reason = typeof body.reason === "string" ? body.reason.trim() : "";
 	if (reason.length < 3) throw invalid(["reason must be longer than or equal to 3 characters"]);
-	if (body.days !== undefined && !(Number.isInteger(body.days) && (body.days as number) > 0)) throw invalid(["days must be a positive integer"]);
+	if (body.days !== undefined && !(Number.isInteger(body.days) && (body.days as number) > 0))
+		throw invalid(["days must be a positive integer"]);
 	return update((db) => {
 		const r = {
 			address: params.address!,

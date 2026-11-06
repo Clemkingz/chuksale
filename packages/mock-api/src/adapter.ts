@@ -87,6 +87,12 @@ export async function mockAdapter(config: InternalAxiosRequestConfig): Promise<A
 		};
 		const response = respond(status, body);
 		if (err?.retryAfterSeconds) (response.headers as AxiosHeaders).set("retry-after", String(err.retryAfterSeconds));
-		throw new AxiosError(message, status >= 500 ? AxiosError.ERR_BAD_RESPONSE : AxiosError.ERR_BAD_REQUEST, config, response.request, response);
+		throw new AxiosError(
+			message,
+			status >= 500 ? AxiosError.ERR_BAD_RESPONSE : AxiosError.ERR_BAD_REQUEST,
+			config,
+			response.request,
+			response,
+		);
 	}
 }

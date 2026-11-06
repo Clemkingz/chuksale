@@ -1,7 +1,17 @@
 "use client";
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Contribution, Feedback, Page, Project, ProjectInput, ProjectInsights, ProjectType } from "@repo/domain/types";
+import type {
+	Contribution,
+	Feedback,
+	Page,
+	Project,
+	ProjectInput,
+	ProjectInsights,
+	ProjectType,
+	ProjectUpdate,
+	ProjectUpdateInput,
+} from "@repo/domain/types";
 import { builderApi, unwrap } from "@/lib/api/client";
 
 /**
@@ -79,17 +89,24 @@ export function useDeleteProject(id: string) {
 	});
 }
 
-/** JPEG, PNG or WebP up to 5 MB, as multipart part `cover`. */
-export function useUploadCover(id: string) {
+/** JPEG, PNG or WebP up to 5 MB, as one multipart part named after the image (`cover`, `logo`). */
+function useProjectImage(id: string, kind: "cover" | "logo") {
 	return useProjectWrite(async (file: File) => {
 		const form = new FormData();
-		form.append("cover", file);
-		return unwrap<Project>(await builderApi.put(`/builder/projects/${id}/cover`, form));
+		form.append(kind, file);
+		return unwrap<Project>(await builderApi.put(`/builder/projects/${id}/${kind}`, form));
 	});
 }
 
+export const useUploadCover = (id: string) => useProjectImage(id, "cover");
+export const useUploadLogo = (id: string) => useProjectImage(id, "logo");
+
 export function useRemoveCover(id: string) {
 	return useProjectWrite(async () => unwrap<Project>(await builderApi.delete(`/builder/projects/${id}/cover`)));
+}
+
+export function useRemoveLogo(id: string) {
+	return useProjectWrite(async () => unwrap<Project>(await builderApi.delete(`/builder/projects/${id}/logo`)));
 }
 
 /** Every admin decision with its reason, oldest first (internal notes are never included). */
@@ -136,3 +153,56 @@ export function useBuilderContributionTotals(id: string, enabled = true) {
 			unwrap<Page<Contribution>>(await builderApi.get(`/builder/projects/${id}/contributions`, { params: { limit: 100 } })),
 	});
 }
+
+// ---------------------------------------------------------------- updates (approved projects only)
+
+const updateKeys = (projectId: string) => ["builder", "projects", "updates", projectId] as const;
+
+/** My updates on a project, newest first, including ones an admin removed (with the reason). */
+export function useBuilderUpdates(projectId: string, enabled = true) {
+	return useQuery({
+		queryKey: updateKeys(projectId),
+		enabled,
+		queryFn: async () =>
+			unwrap<Page<ProjectUpdate>>(await builderApi.get(`/builder/projects/${projectId}/updates`, { params: { limit: 100 } })),
+	});
+}
+
+function useUpdateWrite<TVars, TData>(projectId: string, fn: (v: TVars) => Promise<TData>) {
+	const qc = useQueryClient();
+	return useMutation({
+		mutationFn: fn,
+		onSuccess: () => {
+			void qc.invalidateQueries({ queryKey: updateKeys(projectId) });
+			// The public list on the project page too.
+			void qc.invalidateQueries({ queryKey: ["projects", "updates"] });
+		},
+	});
+}
+
+/** Public at once; every wallet that backed the project is notified. */
+export const usePostUpdate = (projectId: string) =>
+	useUpdateWrite(projectId, async (v: ProjectUpdateInput) =>
+		unwrap<ProjectUpdate>(await builderApi.post(`/builder/projects/${projectId}/updates`, v)),
+	);
+
+/** Backers aren't notified again. Removed updates can't be edited (409). */
+export const useEditUpdate = (projectId: string) =>
+	useUpdateWrite(projectId, async (v: { id: string } & Partial<ProjectUpdateInput>) =>
+		unwrap<ProjectUpdate>(
+			await builderApi.patch(`/builder/projects/${projectId}/updates/${v.id}`, { title: v.title, body: v.body }),
+		),
+	);
+
+export const useDeleteUpdate = (projectId: string) =>
+	useUpdateWrite(projectId, async (id: string) => {
+		await builderApi.delete(`/builder/projects/${projectId}/updates/${id}`);
+	});
+
+export const useUpdateImage = (projectId: string) =>
+	useUpdateWrite(projectId, async (v: { id: string; file: File | null }) => {
+		if (!v.file) return unwrap<ProjectUpdate>(await builderApi.delete(`/builder/projects/${projectId}/updates/${v.id}/image`));
+		const form = new FormData();
+		form.append("image", v.file);
+		return unwrap<ProjectUpdate>(await builderApi.put(`/builder/projects/${projectId}/updates/${v.id}/image`, form));
+	});

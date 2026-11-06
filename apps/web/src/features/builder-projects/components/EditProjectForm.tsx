@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useFieldArray, useForm, useWatch, type FieldPath } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { AlertTriangle, ArrowLeft, Lock, MessageSquareWarning, Plus, Trash2, Wallet } from "lucide-react";
+import { AlertTriangle, BadgeCheck, Lock, MessageSquareWarning, Plus, Trash2, Wallet } from "lucide-react";
 import { PROJECT_STAGE_LABEL, PROJECT_TYPE_LABEL } from "@repo/domain/labels";
 import type { Project, ProjectInput, ProjectStage, ProjectType } from "@repo/domain/types";
 import { Button } from "@repo/ui/button";
@@ -19,9 +19,11 @@ import { FormError, TextAreaField, TextField } from "@/components/forms/Fields";
 import { EmptyState, ErrorState } from "@/components/States";
 import { useCategories } from "@/features/projects/hooks";
 import { useConnectedWallet } from "@/features/wallet/hooks";
-import { CoverUpload } from "@/features/builder-projects/components/CoverUpload";
+import { CoverUpload, LogoUpload } from "@/features/builder-projects/components/CoverUpload";
+import { BackLink } from "@/components/BackLink";
+import { useMe } from "@/features/builder-auth/hooks";
 import { useBuilderProject, useSubmitProject, useUpdateProject } from "@/features/builder-projects/hooks";
-import { projectSchema, type ProjectValues } from "@/features/builder-projects/schema";
+import { projectSchema, type ProjectValues, dayOf, endOfDay } from "@/features/builder-projects/schema";
 
 /**
  * /builder/projects/[id]/edit (backend guide, "Builder: create and edit"): only while `permissions.canEdit`
@@ -49,6 +51,7 @@ const FIELD_OF: Record<string, FieldPath<ProjectValues>> = {
 	targetAssetId: "targetAssetId",
 	acceptedAssetIds: "acceptedAssetIds",
 	payoutAddress: "payoutAddress",
+	fundingEndsAt: "fundingEndsAt",
 };
 
 const toValues = (p: Project): ProjectValues => ({
@@ -67,6 +70,7 @@ const toValues = (p: Project): ProjectValues => ({
 	targetAssetId: p.targetAsset?.id ?? "",
 	acceptedAssetIds: p.acceptedAssets.map((a) => a.id),
 	payoutAddress: p.payoutAddress ?? "",
+	fundingEndsAt: dayOf(p.fundingEndsAt),
 });
 
 /** Only documented fields; empty text clears (null). */
@@ -88,6 +92,7 @@ const toInput = (v: ProjectValues): ProjectInput => {
 		targetAssetId: t(v.targetAssetId),
 		acceptedAssetIds: v.acceptedAssetIds,
 		payoutAddress: t(v.payoutAddress),
+		fundingEndsAt: v.fundingEndsAt ? endOfDay(v.fundingEndsAt).toISOString() : null,
 	};
 };
 
@@ -142,6 +147,7 @@ function Form({ project: p }: { project: Project }) {
 	const categories = useCategories();
 	const network = useNetwork();
 	const { address } = useConnectedWallet();
+	const verified = useMe().data?.profile?.walletAddress ?? null;
 	const save = useUpdateProject(p.id);
 	const submit = useSubmitProject(p.id);
 	const [problems, setProblems] = useState<string[]>([]);
@@ -197,32 +203,36 @@ function Form({ project: p }: { project: Project }) {
 		void run();
 	};
 
-	const saveOnly = fresh(form.handleSubmit((v) => {
-		setProblems([]);
-		save.mutate(toInput(v), {
-			onSuccess: (next) => {
-				notify.success("Draft saved");
-				form.reset(toValues(next));
-			},
-			onError: showProblems,
-		});
-	}));
+	const saveOnly = fresh(
+		form.handleSubmit((v) => {
+			setProblems([]);
+			save.mutate(toInput(v), {
+				onSuccess: (next) => {
+					notify.success("Draft saved");
+					form.reset(toValues(next));
+				},
+				onError: showProblems,
+			});
+		}),
+	);
 
-	const saveAndSubmit = fresh(form.handleSubmit((v) => {
-		setProblems([]);
-		save.mutate(toInput(v), {
-			onSuccess: () => {
-				submit.mutate(undefined, {
-					onSuccess: () => {
-						notify.success("Submitted for review");
-						router.push(routes.submitted(p.id));
-					},
-					onError: showProblems,
-				});
-			},
-			onError: showProblems,
-		});
-	}));
+	const saveAndSubmit = fresh(
+		form.handleSubmit((v) => {
+			setProblems([]);
+			save.mutate(toInput(v), {
+				onSuccess: () => {
+					submit.mutate(undefined, {
+						onSuccess: () => {
+							notify.success("Submitted for review");
+							router.push(routes.submitted(p.id));
+						},
+						onError: showProblems,
+					});
+				},
+				onError: showProblems,
+			});
+		}),
+	);
 
 	const toggleAsset = (id: string) =>
 		form.setValue("acceptedAssetIds", accepted.includes(id) ? accepted.filter((a) => a !== id) : [...accepted, id], {
@@ -232,12 +242,7 @@ function Form({ project: p }: { project: Project }) {
 
 	return (
 		<div className="app-container max-w-[820px] py-8 md:py-12">
-			<Link
-				href={routes.builderProject(p.id)}
-				className="inline-flex items-center gap-1.5 text-sm text-white/60 hover:text-white"
-			>
-				<ArrowLeft className="size-4" /> Project status
-			</Link>
+			<BackLink href={routes.builderProject(p.id)} label="Project status" />
 			<h1 className="animate-rise mt-4 font-display text-[30px] font-bold md:text-[36px]">
 				{p.status === "draft" ? "Finish your project" : "Edit project"}
 			</h1>
@@ -312,7 +317,10 @@ function Form({ project: p }: { project: Project }) {
 							))}
 						</Select>
 					</div>
-					<CoverUpload projectId={p.id} url={p.coverImageUrl} />
+					<div className="grid gap-6 sm:grid-cols-[auto_minmax(0,1fr)]">
+						<LogoUpload projectId={p.id} url={p.logoUrl} />
+						<CoverUpload projectId={p.id} url={p.coverImageUrl} />
+					</div>
 				</Group>
 
 				<Group title="The story" hint="This is what reviewers and contributors read.">
@@ -371,9 +379,7 @@ function Form({ project: p }: { project: Project }) {
 					{(errors.teamMembers?.message || errors.teamMembers?.root?.message) && (
 						<p className="text-sm text-error-200">{errors.teamMembers?.message ?? errors.teamMembers?.root?.message}</p>
 					)}
-					{team.fields.length < 20 && (
-						<AddButton onClick={() => team.append({ name: "", role: "" })}>Add a person</AddButton>
-					)}
+					{team.fields.length < 20 && <AddButton onClick={() => team.append({ name: "", role: "" })}>Add a person</AddButton>}
 				</Group>
 
 				<Group title="Links" hint="Website, repository, socials. https:// only, up to 10.">
@@ -424,7 +430,9 @@ function Form({ project: p }: { project: Project }) {
 											key={a.id}
 											className={cn(
 												"flex cursor-pointer items-center gap-3 rounded-lg border px-3.5 py-3 text-sm transition-colors",
-												accepted.includes(a.id) ? "border-primary-500 bg-primary-500/10" : "border-white/25 hover:border-white/45",
+												accepted.includes(a.id)
+													? "border-primary-500 bg-primary-500/10"
+													: "border-white/25 hover:border-white/45",
 											)}
 										>
 											<input
@@ -445,8 +453,12 @@ function Form({ project: p }: { project: Project }) {
 								)}
 								{accepted.some((idA) => network.data?.assets.find((a) => a.id === idA && !a.native)) && (
 									<p className="mt-2 text-xs leading-5 text-white/55">
-										To receive {network.data?.assets.filter((a) => !a.native && accepted.includes(a.id)).map((a) => a.code).join(", ")}, your
-										payout wallet needs a trustline for it. The API checks this when you submit.
+										To receive{" "}
+										{network.data?.assets
+											.filter((a) => !a.native && accepted.includes(a.id))
+											.map((a) => a.code)
+											.join(", ")}
+										, your payout wallet needs a trustline for it. The API checks this when you submit.
 									</p>
 								)}
 							</fieldset>
@@ -474,7 +486,15 @@ function Form({ project: p }: { project: Project }) {
 								placeholder="G…"
 								error={errors.payoutAddress?.message}
 								hint={
-									address && payout !== address ? (
+									verified && payout !== verified ? (
+										<button
+											type="button"
+											onClick={() => form.setValue("payoutAddress", verified, { shouldValidate: true, shouldDirty: true })}
+											className="animate-rise mt-2 inline-flex items-center gap-1.5 text-sm text-primary-300 hover:text-primary-200"
+										>
+											<BadgeCheck className="size-3.5" aria-hidden /> Use my verified wallet ({shortKey(verified, 4, 4)})
+										</button>
+									) : address && payout !== address ? (
 										<button
 											type="button"
 											onClick={() => form.setValue("payoutAddress", address, { shouldValidate: true, shouldDirty: true })}
@@ -484,12 +504,23 @@ function Form({ project: p }: { project: Project }) {
 										</button>
 									) : (
 										<p className="mt-1.5 text-xs text-white/45">
-											It must exist on Stellar {network.data?.network === "mainnet" ? "" : "Testnet "}(funded with XLM).
-											Never enter a secret key.
+											It must exist on Stellar {network.data?.network === "mainnet" ? "" : "Testnet "}(funded with XLM). Never
+											enter a secret key.
 										</p>
 									)
 								}
 								{...form.register("payoutAddress", { setValueAs: (v: string) => v.trim().toUpperCase() })}
+							/>
+							<TextField
+								label="Funding deadline (optional)"
+								type="date"
+								error={errors.fundingEndsAt?.message}
+								hint={
+									<p className="mt-1.5 text-xs text-white/45">
+										Contributions close at the end of this day. Leave it empty to keep funding open.
+									</p>
+								}
+								{...form.register("fundingEndsAt")}
 							/>
 							{targetAsset && !accepted.includes(targetAsset) && (
 								<p className="text-sm text-warning-200">Accept the target’s asset too, so contributions can count toward it.</p>

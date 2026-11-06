@@ -8,7 +8,7 @@ import { notify } from "@/lib/use-toast";
 import { OtpPanel } from "@/features/builder-auth/components/OtpPanel";
 import { useResendOtp, useVerifyEmail } from "@/features/builder-auth/hooks";
 
-/** Designs A2/A3: the code from the sign-up email; success signs the builder in. */
+/** Designs A2/A3: the code from the sign-up email; success signs the builder in and opens "Complete your profile". */
 export function VerifyEmailView() {
 	const router = useRouter();
 	const params = useSearchParams();
@@ -32,8 +32,9 @@ export function VerifyEmailView() {
 					{ email, otp: code },
 					{
 						onSuccess: () => {
-							notify.success("Email verified", "Welcome to Chucksales. Your builder account is ready.");
-							router.replace(next && next.startsWith("/") && !next.startsWith("//") ? next : routes.dashboard);
+							notify.success("Email verified", "Welcome to Chucksales. Let’s finish your profile.");
+							const after = next && next.startsWith("/") && !next.startsWith("//") ? next : null;
+							router.replace(routes.completeProfile(after));
 						},
 					},
 				)

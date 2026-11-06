@@ -1,9 +1,9 @@
-import type { AuthTokens } from "@repo/domain/types";
+import type { AuthTokens, SocialPlatform } from "@repo/domain/types";
 import { read, update } from "../db";
 import type { MockDb, UserRec } from "../records";
 import { ACCESS_TTL_S, HttpError, NoContent, accessToken, invalid, ok, route } from "../router";
 import { uuid } from "../util";
-import { audit, event, meDto, now, rateLimit } from "../common";
+import { audit, event, imagePart, isAddress, meDto, now, rateLimit, readAsDataUrl } from "../common";
 
 /**
  * Accounts (backend guide, "Authentication"). Mock rules: any 6-digit code verifies; refresh tokens are single use
@@ -11,6 +11,7 @@ import { audit, event, meDto, now, rateLimit } from "../common";
  */
 
 const EMAIL = /^\S+@\S+\.\S+$/;
+const PLATFORMS = ["x", "github", "linkedin", "discord", "telegram", "youtube", "instagram", "facebook", "other"];
 const isCode = (v: unknown) => typeof v === "string" && /^\d{6}$/.test(v);
 const s = (v: unknown) => (typeof v === "string" ? v : "");
 
@@ -56,12 +57,17 @@ route("POST", "/auth/register", "public", ({ body }) => {
 			password: s(body.password),
 			emailVerified: false,
 			suspension: null,
+			avatarUrl: null,
 			profile: {
 				displayName: name,
 				organizationName: s(body.organizationName).trim() || null,
 				bio: null,
 				websiteUrl: null,
 				contactEmail: null,
+				socialLinks: [],
+				walletAddress: null,
+				walletVerifiedAt: null,
+				bannerUrl: null,
 			},
 			createdAt: now(),
 		};
@@ -87,7 +93,13 @@ route("POST", "/auth/resend-otp", "public", ({ body }) =>
 	update((db) => {
 		const email = s(body.email).trim().toLowerCase();
 		const last = db.otps.filter((o) => o.email === email).at(-1);
-		if (last && Date.now() - last.at < 60_000) throw new HttpError(429, "Please wait before requesting another code", undefined, 60 - Math.floor((Date.now() - last.at) / 1000));
+		if (last && Date.now() - last.at < 60_000)
+			throw new HttpError(
+				429,
+				"Please wait before requesting another code",
+				undefined,
+				60 - Math.floor((Date.now() - last.at) / 1000),
+			);
 		db.otps.push({ email, purpose: "verify", at: Date.now() });
 		return ok({ otpExpiresInSeconds: 600, resendAfterSeconds: 60 }, "If the account exists, a code was sent");
 	}),
@@ -169,7 +181,7 @@ route("POST", "/auth/change-password", "user", ({ user, body }) => {
 route("GET", "/auth/me", "user", ({ user }) => ok(meDto(read().users.find((u) => u.id === user!.id)!), "Profile"));
 
 route("PATCH", "/auth/me", "user", ({ user, body }) => {
-	const builderFields = ["displayName", "organizationName", "bio", "websiteUrl", "contactEmail"];
+	const builderFields = ["displayName", "organizationName", "bio", "websiteUrl", "contactEmail", "socialLinks"];
 	const keys = Object.keys(body);
 	if (!keys.length) throw invalid(["Send at least one field"]);
 	unknownFields(body, ["name", ...builderFields]);
@@ -177,22 +189,105 @@ route("PATCH", "/auth/me", "user", ({ user, body }) => {
 	const problems: string[] = [];
 	const str = (k: string) => (body[k] === null ? "" : s(body[k]).trim());
 	if ("name" in body && (str("name").length < 1 || str("name").length > 100)) problems.push("name must be 1 to 100 characters");
-	if ("displayName" in body && (str("displayName").length < 1 || str("displayName").length > 100)) problems.push("displayName must be 1 to 100 characters");
-	if ("organizationName" in body && str("organizationName").length > 150) problems.push("organizationName must be shorter than or equal to 150 characters");
+	if ("displayName" in body && (str("displayName").length < 1 || str("displayName").length > 100))
+		problems.push("displayName must be 1 to 100 characters");
+	if ("organizationName" in body && str("organizationName").length > 150)
+		problems.push("organizationName must be shorter than or equal to 150 characters");
 	if ("bio" in body && str("bio").length > 1000) problems.push("bio must be shorter than or equal to 1000 characters");
-	if ("websiteUrl" in body && str("websiteUrl") && !/^https:\/\/\S+\.\S+/.test(str("websiteUrl"))) problems.push("websiteUrl must be an https URL");
-	if ("contactEmail" in body && str("contactEmail") && !EMAIL.test(str("contactEmail"))) problems.push("contactEmail must be an email");
+	if ("websiteUrl" in body && str("websiteUrl") && !/^https:\/\/\S+\.\S+/.test(str("websiteUrl")))
+		problems.push("websiteUrl must be an https URL");
+	if ("contactEmail" in body && str("contactEmail") && !EMAIL.test(str("contactEmail")))
+		problems.push("contactEmail must be an email");
+	if ("socialLinks" in body) {
+		const l = body.socialLinks as { platform?: string; url?: string }[];
+		if (!Array.isArray(l)) problems.push("socialLinks must be an array");
+		else if (l.length > 10) problems.push("socialLinks must contain no more than 10 elements");
+		else
+			l.forEach((x, i) => {
+				if (!PLATFORMS.includes(x?.platform ?? ""))
+					problems.push(`socialLinks.${i}.platform must be one of the following values: ${PLATFORMS.join(", ")}`);
+				if (!/^https:\/\/\S+\.\S+/.test(x?.url ?? "") || (x?.url ?? "").length > 300)
+					problems.push(`socialLinks.${i}.url must be an https URL`);
+			});
+	}
 	if (problems.length) throw invalid(problems);
 	return update((db) => {
 		const u = db.users.find((x) => x.id === user!.id)!;
 		if ("name" in body) u.name = str("name");
 		if (u.profile) {
 			if ("displayName" in body) u.profile.displayName = str("displayName");
-			for (const k of ["organizationName", "bio", "websiteUrl", "contactEmail"] as const) if (k in body) u.profile[k] = str(k) || null;
+			for (const k of ["organizationName", "bio", "websiteUrl", "contactEmail"] as const)
+				if (k in body) u.profile[k] = str(k) || null;
+			if ("socialLinks" in body)
+				u.profile.socialLinks = (body.socialLinks as { platform: SocialPlatform; url: string }[]).map((x) => ({
+					platform: x.platform,
+					url: x.url.trim(),
+				}));
 		}
 		return ok(meDto(u), "Profile updated");
 	});
 });
+
+// Profile picture (builders and admins) and banner (builders): one multipart part, JPEG/PNG/WebP up to 5 MB.
+route("PUT", "/auth/me/avatar", "user", async ({ user, body }) => {
+	const url = await readAsDataUrl(imagePart(body, "avatar", "profile picture"));
+	return update((db) => {
+		const u = db.users.find((x) => x.id === user!.id)!;
+		u.avatarUrl = url;
+		return ok(meDto(u), "Profile picture updated");
+	});
+});
+
+route("DELETE", "/auth/me/avatar", "user", ({ user }) =>
+	update((db) => {
+		const u = db.users.find((x) => x.id === user!.id)!;
+		u.avatarUrl = null;
+		return ok(meDto(u), "Profile picture removed");
+	}),
+);
+
+route("PUT", "/auth/me/banner", "builder", async ({ user, body }) => {
+	const url = await readAsDataUrl(imagePart(body, "banner", "banner"));
+	return update((db) => {
+		const u = db.users.find((x) => x.id === user!.id)!;
+		u.profile!.bannerUrl = url;
+		return ok(meDto(u), "Banner updated");
+	});
+});
+
+route("DELETE", "/auth/me/banner", "builder", ({ user }) =>
+	update((db) => {
+		const u = db.users.find((x) => x.id === user!.id)!;
+		u.profile!.bannerUrl = null;
+		return ok(meDto(u), "Banner removed");
+	}),
+);
+
+/** Links the wallet behind a live wallet token (proof of control). One builder per wallet. */
+route("PUT", "/auth/me/wallet", "builder", ({ user, body }) => {
+	unknownFields(body, ["walletToken"]);
+	if (typeof body.walletToken !== "string" || !body.walletToken) throw invalid(["walletToken must be a string"]);
+	return update((db) => {
+		const session = db.walletSessions.find((w) => w.token === body.walletToken && Date.parse(w.expiresAt) > Date.now());
+		if (!session || !isAddress(session.address)) throw new HttpError(401, "Wallet session expired. Connect the wallet again.");
+		if (db.users.some((u) => u.id !== user!.id && u.profile?.walletAddress === session.address))
+			throw new HttpError(409, "This wallet is already linked to another builder");
+		const u = db.users.find((x) => x.id === user!.id)!;
+		u.profile!.walletAddress = session.address;
+		u.profile!.walletVerifiedAt = now();
+		audit(db, u.id, "auth.link_wallet", { type: "user", id: u.id }, { metadata: { address: session.address } });
+		return ok(meDto(u), "Wallet linked");
+	});
+});
+
+route("DELETE", "/auth/me/wallet", "builder", ({ user }) =>
+	update((db) => {
+		const u = db.users.find((x) => x.id === user!.id)!;
+		u.profile!.walletAddress = null;
+		u.profile!.walletVerifiedAt = null;
+		return ok(meDto(u), "Wallet unlinked");
+	}),
+);
 
 /** Mock (test mode) only: straight in as the demo admin (restored if it was suspended). */
 route("POST", "/mock/admin/session", "public", () =>

@@ -7,7 +7,7 @@ import { getControls, setControls, type MockControls, type WalletScenario } from
 import { Button } from "@repo/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@repo/ui/popover";
 import { cn } from "@repo/ui/lib/utils";
-import { accountTokens, builderApi } from "@/lib/api/client";
+import { accountTokens, builderApi, walletApi } from "@/lib/api/client";
 import { resetDemoData } from "@/lib/api/source";
 import { notify } from "@/lib/use-toast";
 import { useWallet } from "@/features/wallet/store";
@@ -34,7 +34,12 @@ export function DemoControls() {
 	async function push() {
 		setPushing(true);
 		try {
-			await builderApi.post("/mock/notifications/push");
+			// To the builder inbox when signed in, and to the connected wallet's inbox.
+			const signedIn = accountTokens.hasSession();
+			const wallet = !!useWallet.getState().address;
+			if (!signedIn && !wallet) return notify.info("Sign in as a builder or connect a wallet first");
+			if (signedIn) await builderApi.post("/mock/notifications/push");
+			if (wallet) await walletApi.post("/mock/wallet-notifications/push");
 			await qc.invalidateQueries({ queryKey: ["notifications"] });
 		} catch (e) {
 			notify.fromError(e);

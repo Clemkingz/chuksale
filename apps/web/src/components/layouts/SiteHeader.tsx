@@ -84,7 +84,7 @@ export function SiteHeader() {
 				</div>
 
 				<div className="flex items-center gap-3 md:gap-4">
-					{token && <NotificationBell />}
+					{(token || wallet) && <NotificationBell />}
 					<WalletButton className="hidden md:inline-flex" />
 
 					<Sheet open={open} onOpenChange={setOpen}>

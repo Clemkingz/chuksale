@@ -8,11 +8,14 @@ import type {
 	ProjectStage,
 	ProjectStatus,
 	ProjectType,
+	ProjectUpdate,
 	Report,
 	Role,
 	SuggestionStatus,
+	SocialLink,
 	SuggestionType,
 	TeamMember,
+	WalletNotification,
 	WalletRestriction,
 } from "@repo/domain/types";
 
@@ -30,12 +33,18 @@ export interface UserRec {
 	password: string;
 	emailVerified: boolean;
 	suspension: { reason: string; suspendedBy: string; suspendedAt: string } | null;
+	/** Data URL in the mock (the API returns a signed link). */
+	avatarUrl: string | null;
 	profile: {
 		displayName: string;
 		organizationName: string | null;
 		bio: string | null;
 		websiteUrl: string | null;
 		contactEmail: string | null;
+		socialLinks: SocialLink[];
+		walletAddress: string | null;
+		walletVerifiedAt: string | null;
+		bannerUrl: string | null;
 	} | null;
 	createdAt: string;
 }
@@ -65,11 +74,13 @@ export interface ProjectRec {
 	links: ProjectLink[];
 	/** Data URL in the mock (the API returns a signed link). */
 	coverImageUrl: string | null;
+	logoUrl: string | null;
 	fundraisingEnabled: boolean;
 	targetAmount: string | null;
 	targetAssetId: string | null;
 	acceptedAssetIds: string[];
 	payoutAddress: string | null;
+	fundingEndsAt: string | null;
 	published: boolean;
 	featured: boolean;
 	revision: number;
@@ -143,6 +154,13 @@ export interface NotificationRec extends AppNotification {
 	userId: string;
 }
 
+/** Project updates (images are data URLs in the mock). */
+export type UpdateRec = ProjectUpdate;
+
+export interface WalletNotificationRec extends WalletNotification {
+	address: string;
+}
+
 export interface MockDb {
 	version: number;
 	/** When this document was last written (ms). Newest wins when the apps sync (mock-sync). */
@@ -164,6 +182,8 @@ export interface MockDb {
 	reports: (Report & { reporterAddress: string })[];
 	restrictions: WalletRestriction[];
 	notifications: NotificationRec[];
+	walletNotifications: WalletNotificationRec[];
+	updates: UpdateRec[];
 	audit: AuditLogEntry[];
 	events: { name: AnalyticsEvent; at: string; projectId?: string; wallet?: string }[];
 	/** Rate-limit buckets: key → timestamps. */

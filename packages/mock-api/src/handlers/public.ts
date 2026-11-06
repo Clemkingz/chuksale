@@ -16,7 +16,11 @@ route("GET", "/stellar/accounts/:address", "public", ({ params }) => {
 	const a = params.address!;
 	const usdcTrusted = !/[AEIOU]$/.test(a);
 	const spent = (assetId: string) =>
-		sum(read().contributions.filter((c) => c.contributorAddress === a && c.assetId === assetId && c.status === "confirmed").map((c) => c.amount));
+		sum(
+			read()
+				.contributions.filter((c) => c.contributorAddress === a && c.assetId === assetId && c.status === "confirmed")
+				.map((c) => c.amount),
+		);
 	return ok(
 		{
 			address: a,
@@ -26,7 +30,11 @@ route("GET", "/stellar/accounts/:address", "public", ({ params }) => {
 			assets: ASSETS.map((x) => ({
 				...x,
 				trusted: x.native || usdcTrusted,
-				balance: x.native ? subtractFixed("9999.9999900", spent(x.id)) : usdcTrusted ? subtractFixed("500.0000000", spent(x.id)) : null,
+				balance: x.native
+					? subtractFixed("9999.9999900", spent(x.id))
+					: usdcTrusted
+						? subtractFixed("500.0000000", spent(x.id))
+						: null,
 			})),
 		},
 		"Stellar account",
@@ -122,6 +130,14 @@ route("GET", "/projects/:slug/suggestions", "public", ({ params, query }) => {
 	const list = db.suggestions
 		.filter((s) => s.projectId === p.id && s.status === "published" && (!type || s.type === type))
 		.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-		.map((s) => ({ id: s.id, type: s.type, title: s.title, body: s.body, link: s.link, author: shortAddress(s.walletAddress), createdAt: s.createdAt }));
+		.map((s) => ({
+			id: s.id,
+			type: s.type,
+			title: s.title,
+			body: s.body,
+			link: s.link,
+			author: shortAddress(s.walletAddress),
+			createdAt: s.createdAt,
+		}));
 	return ok(page(list, query), "Suggestions retrieved");
 });

@@ -16,6 +16,20 @@ export function useUpdateName() {
 	});
 }
 
+/** Profile picture (`PUT /auth/me/avatar`, part `avatar`; JPEG/PNG/WebP up to 5 MB). `null` removes it. */
+export function useAdminAvatar() {
+	const qc = useQueryClient();
+	return useMutation({
+		mutationFn: async (file: File | null) => {
+			if (!file) return unwrap<Me>(await api.delete("/auth/me/avatar"));
+			const form = new FormData();
+			form.append("avatar", file);
+			return unwrap<Me>(await api.put("/auth/me/avatar", form));
+		},
+		onSuccess: (me) => qc.setQueryData(meKey, me),
+	});
+}
+
 /** A wrong current password is a 400 (never a refresh). Other sessions end; this one stays. */
 export function useChangePassword() {
 	return useMutation({
@@ -43,7 +57,9 @@ export function useInbox(page: number) {
 	return useQuery({
 		queryKey: ["admin", "inbox", page],
 		queryFn: async () =>
-			unwrap<Page<AppNotification>>(await api.get("/notifications", { params: { limit: INBOX_PAGE, offset: (page - 1) * INBOX_PAGE } })),
+			unwrap<Page<AppNotification>>(
+				await api.get("/notifications", { params: { limit: INBOX_PAGE, offset: (page - 1) * INBOX_PAGE } }),
+			),
 		placeholderData: keepPreviousData,
 	});
 }

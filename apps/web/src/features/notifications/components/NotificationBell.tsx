@@ -4,11 +4,11 @@ import Link from "next/link";
 import { Bell } from "lucide-react";
 import { cn } from "@repo/ui/lib/utils";
 import { routes } from "@/lib/routes";
-import { useUnreadCount } from "@/features/notifications/hooks";
+import { useTotalUnread } from "@/features/notifications/hooks";
 
-/** Design: bell in a #333 circle. The badge pops in when the count changes. */
+/** Design: bell in a #333 circle. The badge (builder + wallet inboxes) pops in when the count changes. */
 export function NotificationBell({ className }: { className?: string }) {
-	const { data: count = 0 } = useUnreadCount();
+	const count = useTotalUnread();
 	return (
 		<Link
 			href={routes.notifications}

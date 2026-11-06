@@ -43,9 +43,14 @@ export function BuilderBar() {
 							className="flex items-center gap-2.5 rounded-full py-1 pr-1 pl-1 transition-colors hover:bg-white/5 focus-visible:ring-2 focus-visible:ring-primary-300 focus-visible:outline-none sm:pr-3"
 							aria-label={`Account menu for ${name}`}
 						>
-							<span className="flex size-9 items-center justify-center rounded-full bg-gradient-to-br from-primary-400 to-primary-700 text-xs font-bold">
-								{initials}
-							</span>
+							{me.data?.avatarUrl ? (
+								// eslint-disable-next-line @next/next/no-img-element
+								<img src={me.data.avatarUrl} alt="" className="size-9 rounded-full object-cover" />
+							) : (
+								<span className="flex size-9 items-center justify-center rounded-full bg-gradient-to-br from-primary-400 to-primary-700 text-xs font-bold">
+									{initials}
+								</span>
+							)}
 							<span className="hidden max-w-[160px] truncate text-sm sm:block">{name}</span>
 						</DropdownMenuTrigger>
 						<DropdownMenuContent

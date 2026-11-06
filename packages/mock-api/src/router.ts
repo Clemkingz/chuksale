@@ -99,7 +99,13 @@ function walletFromToken(authorization: string | undefined) {
 	return s && Date.parse(s.expiresAt) > Date.now() ? s.address : null;
 }
 
-export async function dispatch(method: string, path: string, query: URLSearchParams, body: Record<string, unknown>, authorization?: string) {
+export async function dispatch(
+	method: string,
+	path: string,
+	query: URLSearchParams,
+	body: Record<string, unknown>,
+	authorization?: string,
+) {
 	const segments = path.split("/").filter(Boolean);
 	const candidates = routes.filter((r) => match(r, segments));
 	if (candidates.length === 0) throw new HttpError(404, `Cannot ${method.toUpperCase()} ${path}`);

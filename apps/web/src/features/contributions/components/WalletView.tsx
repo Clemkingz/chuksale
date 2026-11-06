@@ -29,6 +29,7 @@ import { DEMO_WALLET } from "@/features/wallet/connect";
 import { useWalletDialog } from "@/features/wallet/dialog-store";
 import { useConnectedWallet } from "@/features/wallet/hooks";
 import { walletName } from "@/features/wallet/kit";
+import { BackLink } from "@/components/BackLink";
 
 /**
  * /wallet: the contributor page (PRD §3.2: contributors have no account; the connected wallet is their identity).
@@ -114,7 +115,8 @@ function ConnectedWallet({ address, walletId }: { address: string; walletId: str
 
 	return (
 		<div className="app-container py-8 md:py-12">
-			<header className="flex flex-wrap items-end justify-between gap-4">
+			<BackLink href={routes.projects} label="Explore projects" />
+			<header className="mt-3 flex flex-wrap items-end justify-between gap-4">
 				<div>
 					<h1 className="animate-rise font-display text-[32px] leading-tight font-bold md:text-[40px]">My wallet</h1>
 					<p className="animate-rise mt-1.5 text-white/65 [--i:1]">
@@ -558,11 +560,7 @@ function MySuggestions() {
 							<p
 								className={cn(
 									"text-xs",
-									s.status === "published"
-										? "text-success-200"
-										: s.status === "pending"
-											? "text-warning-200"
-											: "text-white/50",
+									s.status === "published" ? "text-success-200" : s.status === "pending" ? "text-warning-200" : "text-white/50",
 								)}
 							>
 								{SUGGESTION_STATUS_LABEL[s.status]}

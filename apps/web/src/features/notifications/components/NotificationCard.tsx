@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { Bell } from "lucide-react";
-import type { AppNotification } from "@repo/domain/types";
 import { cn } from "@repo/ui/lib/utils";
 import { timeAgo } from "@/lib/time";
+import type { Inbox, InboxItem } from "@/features/notifications/hooks";
 import { NOTIFICATION_META, isDecision, notificationHref } from "@/features/notifications/meta";
 
 /**
@@ -13,18 +13,20 @@ import { NOTIFICATION_META, isDecision, notificationHref } from "@/features/noti
  */
 export function NotificationCard({
 	notification: n,
+	inbox,
 	index,
 	onOpen,
 }: {
-	notification: AppNotification;
+	notification: InboxItem;
+	inbox: Inbox;
 	index: number;
 	onOpen: () => void;
 }) {
 	const meta = NOTIFICATION_META[n.type] ?? { Icon: Bell, action: "Open" };
 	const { Icon, tone } = meta;
 	const unread = !n.readAt;
-	const href = notificationHref(n);
-	const quoted = isDecision(n) && n.body;
+	const href = notificationHref(n, inbox);
+	const quoted = isDecision(n);
 	const body = (
 		<>
 			<span
@@ -37,7 +39,12 @@ export function NotificationCard({
 				<Icon className="size-5 sm:size-6" />
 			</span>
 			<span className="min-w-0 flex-1">
-				<span className={cn("block text-[15px] leading-snug sm:text-lg", unread ? "font-bold text-white" : "font-medium text-white/80")}>
+				<span
+					className={cn(
+						"block text-[15px] leading-snug sm:text-lg",
+						unread ? "font-bold text-white" : "font-medium text-white/80",
+					)}
+				>
 					{n.title}
 				</span>
 				{n.body &&

@@ -6,6 +6,7 @@ import { ArrowRight, ChevronDown, Search, SearchX, X } from "lucide-react";
 import { cn } from "@repo/ui/lib/utils";
 import { SUPPORT_TELEGRAM_URL } from "@/lib/site";
 import { FAQS, type Faq } from "@/features/faq/content";
+import { BackLink } from "@/components/BackLink";
 
 /**
  * Design "FAQs": big title, "Search for a question…", one card of questions (first open), then
@@ -71,8 +72,9 @@ export function FaqView() {
 		});
 
 	return (
-		<div className="app-container pt-14 pb-20 md:pt-[150px] md:pb-32">
-			<h1 className="animate-rise mx-auto max-w-[1100px] text-center font-display text-[34px] leading-[1.1] font-bold tracking-[-0.01em] text-balance sm:text-5xl lg:text-[60px]">
+		<div className="app-container pt-8 pb-20 md:pt-12 md:pb-32">
+			<BackLink href="/" label="Home" />
+			<h1 className="animate-rise mx-auto mt-8 max-w-[1100px] md:mt-[90px] text-center font-display text-[34px] leading-[1.1] font-bold tracking-[-0.01em] text-balance sm:text-5xl lg:text-[60px]">
 				Frequently Asked Questions (FAQs)
 			</h1>
 

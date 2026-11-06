@@ -22,6 +22,8 @@ export const routes = {
 
 	dashboard: "/builder/dashboard",
 	editProfile: "/builder/profile",
+	/** First stop after email verification: the profile with a progress bar; `next` is where "Continue" goes. */
+	completeProfile: (next?: string | null) => `/builder/profile?welcome=1${next ? `&next=${encodeURIComponent(next)}` : ""}`,
 	newProject: "/builder/projects/new",
 	builderProject: (id: string) => `/builder/projects/${id}`,
 	editProject: (id: string) => `/builder/projects/${id}/edit`,

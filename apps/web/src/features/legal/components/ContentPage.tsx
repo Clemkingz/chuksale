@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 import Link from "next/link";
+import { BackLink } from "@/components/BackLink";
 
 /**
  * Long-form pages (About, Terms, Privacy, Risk): title, intro, an "On this page" list on wide screens and numbered
@@ -24,8 +25,9 @@ export function ContentPage({
 	aside?: ReactNode;
 }) {
 	return (
-		<div className="app-container py-12 md:py-20">
-			<header className="max-w-[760px]">
+		<div className="app-container py-8 md:py-12">
+			<BackLink href="/" label="Home" />
+			<header className="mt-6 max-w-[760px] md:mt-10">
 				<p className="animate-rise text-sm tracking-wide text-primary-300 uppercase">{eyebrow}</p>
 				<h1 className="animate-rise mt-3 font-display text-[34px] leading-tight font-bold [--i:1] md:text-5xl">{title}</h1>
 				<div className="animate-rise mt-4 text-lg leading-8 text-white/75 [--i:2]">{intro}</div>

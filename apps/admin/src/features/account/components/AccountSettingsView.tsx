@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { BellOff, CheckCheck, LogOut } from "lucide-react";
+import { BellOff, Camera, CheckCheck, Loader2, LogOut, X } from "lucide-react";
 import type { Me } from "@repo/domain/types";
 import { Button } from "@repo/ui/button";
 import { cn } from "@repo/ui/lib/utils";
@@ -20,6 +20,7 @@ import { EmptyState, ErrorState, PageTitle, Pager, RowsSkeleton, UnderlineTabs }
 import { useMe } from "@/features/auth/hooks";
 import {
 	INBOX_PAGE,
+	useAdminAvatar,
 	useChangePassword,
 	useInbox,
 	useInboxUnread,
@@ -85,6 +86,61 @@ function Card({ title, children, reveal = 0 }: { title: string; children: ReactN
 	);
 }
 
+/** Click the picture to upload one (JPEG, PNG or WebP up to 5 MB); remove it from the small button. */
+function AvatarEditor({ me }: { me: Me }) {
+	const avatar = useAdminAvatar();
+	const input = useRef<HTMLInputElement>(null);
+	const fail = (e: unknown) =>
+		notify.error(
+			errorStatus(e) === 413
+				? "That image is over 5 MB."
+				: errorStatus(e) === 415
+					? "Use a JPEG, PNG or WebP image."
+					: errorMessage(e),
+		);
+	return (
+		<div className="relative shrink-0">
+			<button
+				type="button"
+				onClick={() => input.current?.click()}
+				disabled={avatar.isPending}
+				aria-label={me.avatarUrl ? "Change profile picture" : "Add a profile picture"}
+				className="group relative block rounded-full focus-visible:ring-2 focus-visible:ring-primary-400 focus-visible:outline-none"
+			>
+				<Avatar name={me.name} src={me.avatarUrl} className="size-16 text-xl" />
+				<span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/55 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+					{avatar.isPending ? <Loader2 className="size-5 animate-spin" /> : <Camera className="size-5" />}
+				</span>
+			</button>
+			{me.avatarUrl && (
+				<button
+					type="button"
+					onClick={() => avatar.mutate(null, { onSuccess: () => notify.info("Profile picture removed"), onError: fail })}
+					disabled={avatar.isPending}
+					aria-label="Remove profile picture"
+					className="absolute -right-1 -bottom-1 flex size-6 items-center justify-center rounded-full bg-[#2a2b38] text-white/80 ring-2 ring-surface-900 hover:text-error-200"
+				>
+					<X className="size-3.5" />
+				</button>
+			)}
+			<input
+				ref={input}
+				type="file"
+				accept="image/jpeg,image/png,image/webp"
+				className="sr-only"
+				tabIndex={-1}
+				onChange={(e) => {
+					const f = e.target.files?.[0];
+					e.target.value = "";
+					if (!f) return;
+					if (f.size > 5 * 1024 * 1024) return notify.error("That image is over 5 MB.");
+					avatar.mutate(f, { onSuccess: () => notify.success("Profile picture updated"), onError: fail });
+				}}
+			/>
+		</div>
+	);
+}
+
 function Profile({ me }: { me: Me }) {
 	const save = useUpdateName();
 	const [name, setName] = useState(me.name);
@@ -92,7 +148,7 @@ function Profile({ me }: { me: Me }) {
 	return (
 		<div className="flex flex-col gap-6">
 			<section className="admin-card flex items-center gap-5 px-5 py-6 md:px-7">
-				<Avatar name={me.name} className="size-16 text-xl" />
+				<AvatarEditor me={me} />
 				<div className="min-w-0">
 					<p className="truncate font-display text-2xl font-bold">{me.name}</p>
 					<p className="truncate text-white/70">{me.email}</p>
@@ -115,10 +171,22 @@ function Profile({ me }: { me: Me }) {
 							value={name}
 							maxLength={100}
 							onChange={(e) => setName(e.target.value)}
-							error={save.isError ? (detailsByField(save.error).name ?? errorMessage(save.error)) : name && tooShort ? "Use 1–100 characters." : undefined}
+							error={
+								save.isError
+									? (detailsByField(save.error).name ?? errorMessage(save.error))
+									: name && tooShort
+										? "Use 1–100 characters."
+										: undefined
+							}
 						/>
 					</div>
-					<Button type="submit" className="h-12 w-auto px-6" disabled={tooShort || name.trim() === me.name} isLoading={save.isPending} loadingLabel="Saving">
+					<Button
+						type="submit"
+						className="h-12 w-auto px-6"
+						disabled={tooShort || name.trim() === me.name}
+						isLoading={save.isPending}
+						loadingLabel="Saving"
+					>
 						Save
 					</Button>
 				</form>
@@ -165,18 +233,42 @@ function Security() {
 								onError: (e) => {
 									const byField = detailsByField(e);
 									if (byField.newPassword) form.setError("newPassword", { message: byField.newPassword });
-									else if (errorStatus(e) === 400) form.setError("currentPassword", { message: errorMessage(e) }, { shouldFocus: true });
+									else if (errorStatus(e) === 400)
+										form.setError("currentPassword", { message: errorMessage(e) }, { shouldFocus: true });
 								},
 							},
 						),
 					)}
 					className="flex max-w-[520px] flex-col gap-4"
 				>
-					<Field label="Current password" type="password" autoComplete="current-password" error={errors.currentPassword?.message} {...form.register("currentPassword")} />
-					<Field label="New password" type="password" autoComplete="new-password" error={errors.newPassword?.message} {...form.register("newPassword")} />
-					<Field label="Confirm new password" type="password" autoComplete="new-password" error={errors.confirm?.message} {...form.register("confirm")} />
+					<Field
+						label="Current password"
+						type="password"
+						autoComplete="current-password"
+						error={errors.currentPassword?.message}
+						{...form.register("currentPassword")}
+					/>
+					<Field
+						label="New password"
+						type="password"
+						autoComplete="new-password"
+						error={errors.newPassword?.message}
+						{...form.register("newPassword")}
+					/>
+					<Field
+						label="Confirm new password"
+						type="password"
+						autoComplete="new-password"
+						error={errors.confirm?.message}
+						{...form.register("confirm")}
+					/>
 					<FormError message={change.isError && errorStatus(change.error) !== 400 ? errorMessage(change.error) : null} />
-					<Button type="submit" className="h-12 w-auto self-start px-6" isLoading={change.isPending} loadingLabel="Changing password">
+					<Button
+						type="submit"
+						className="h-12 w-auto self-start px-6"
+						isLoading={change.isPending}
+						loadingLabel="Changing password"
+					>
 						Change password
 					</Button>
 				</form>
@@ -220,7 +312,14 @@ function Inbox() {
 			<div className="flex items-center justify-between gap-3 px-5 py-5 md:px-7">
 				<h2 className="font-display text-xl font-bold">Notifications</h2>
 				{!!unread.data && (
-					<Button variant="ghost" size="sm" className="w-auto gap-1.5 px-3" isLoading={all.isPending} loadingLabel="Marking read" onClick={() => all.mutate()}>
+					<Button
+						variant="ghost"
+						size="sm"
+						className="w-auto gap-1.5 px-3"
+						isLoading={all.isPending}
+						loadingLabel="Marking read"
+						onClick={() => all.mutate()}
+					>
 						<CheckCheck className="size-4" /> Mark all read
 					</Button>
 				)}
@@ -232,7 +331,11 @@ function Inbox() {
 					<ErrorState message={errorMessage(q.error)} onRetry={() => void q.refetch()} />
 				</div>
 			) : d && d.result.length === 0 ? (
-				<EmptyState icon={<BellOff className="size-6" aria-hidden />} title="No notifications" description="When a builder submits a project, you’re told here." />
+				<EmptyState
+					icon={<BellOff className="size-6" aria-hidden />}
+					title="No notifications"
+					description="When a builder submits a project, you’re told here."
+				/>
 			) : d ? (
 				<ul>
 					{d.result.map((n) => (
@@ -242,7 +345,10 @@ function Inbox() {
 								onClick={() => !n.readAt && read.mutate(n.id)}
 								className="flex gap-3 px-5 py-4 hover:bg-white/[0.03] md:px-7"
 							>
-								<span className={cn("mt-2 size-2 shrink-0 rounded-full", n.readAt ? "bg-transparent" : "bg-primary-500")} aria-hidden />
+								<span
+									className={cn("mt-2 size-2 shrink-0 rounded-full", n.readAt ? "bg-transparent" : "bg-primary-500")}
+									aria-hidden
+								/>
 								<span className="min-w-0 flex-1">
 									<span className={cn("block", !n.readAt && "font-medium")}>{n.title}</span>
 									{n.body && <span className="mt-1 block text-sm whitespace-pre-line text-white/65">{n.body}</span>}

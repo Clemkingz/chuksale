@@ -6,3 +6,4 @@ import "./admin";
 import "./contributions";
 import "./suggestions";
 import "./notifications";
+import "./updates";
