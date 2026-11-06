@@ -11,7 +11,7 @@ import { ProjectDetail } from "@/features/projects/components/ProjectDetail";
 /** /projects/[slug]: loads the public project (404 unless approved + published, FR-REV-05). */
 export function ProjectPage({ slug }: { slug: string }) {
 	const project = useProject(slug);
-	if (project.data) return <ProjectDetail project={project.data} />;
+	if (project.data) return <ProjectDetail project={project.data} partial={project.isPlaceholderData && !project.data.problem} />;
 	if (project.isError)
 		return (
 			<div className="app-container py-16">

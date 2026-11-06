@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { StellarAccountSummary, StellarAsset, StellarNetworkInfo } from "@repo/domain/types";
 import { api, unwrap } from "@/lib/api/client";
+import { useSaved } from "@/lib/query-cache";
 
 /**
  * The platform's Stellar network, accepted assets and explorer (`GET /stellar/network`). Never hardcode assets:
@@ -22,7 +23,8 @@ export function getNetwork() {
 }
 
 export function useNetwork() {
-	return useQuery({ queryKey: ["stellar", "network"], queryFn: getNetwork, staleTime: 30 * 60_000 });
+	const saved = useSaved<StellarNetworkInfo>(["stellar", "network"]);
+	return useQuery({ queryKey: ["stellar", "network"], queryFn: getNetwork, staleTime: 30 * 60_000, placeholderData: saved });
 }
 
 /** "USDC · GBBD…LA5" style label: the issuer is shown so lookalike tokens stand out. */

@@ -12,7 +12,7 @@ import { errorMessage } from "@/lib/api/errors";
 import { routes } from "@/lib/routes";
 import { EmptyState, ErrorState } from "@/components/States";
 import { Pager } from "@/components/Pager";
-import { useCategories, useProjects, type ExploreFilters } from "@/features/projects/hooks";
+import { useCategories, useProjects, type ExploreFilters, EXPLORE_PAGE } from "@/features/projects/hooks";
 import { useNetwork } from "@/lib/stellar/network";
 import { ProjectCard, ProjectCardSkeleton } from "@/features/projects/components/ProjectCard";
 
@@ -26,7 +26,7 @@ import { ProjectCard, ProjectCardSkeleton } from "@/features/projects/components
 const STAGES = Object.entries(PROJECT_STAGE_LABEL) as [ProjectStage, string][];
 const TYPES = Object.entries(PROJECT_TYPE_LABEL) as [ProjectType, string][];
 const SORTS = ["featured", "newest", "title"] as const;
-const PER_PAGE = 9;
+const PER_PAGE = EXPLORE_PAGE;
 
 export function ExploreView() {
 	const router = useRouter();

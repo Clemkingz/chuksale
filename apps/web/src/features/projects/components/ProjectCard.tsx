@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useQueryClient } from "@tanstack/react-query";
 import type { CSSProperties } from "react";
 import { Users } from "lucide-react";
 import { PROJECT_STAGE_LABEL } from "@repo/domain/labels";
@@ -11,6 +14,7 @@ import { FundingDeadline } from "@/components/FundingDeadline";
 import { ProjectLogo } from "@/components/ProjectLogo";
 import { Progress } from "@/components/Progress";
 import { fundingProgress, raisedIn } from "@/features/projects/funding";
+import { prefetchProject } from "@/features/projects/hooks";
 
 /**
  * A live project in a grid (Home, Explore). Funding shows CONFIRMED totals only, in the target's own asset (other
@@ -30,10 +34,15 @@ export function ProjectCard({ project: p, index = 0 }: { project: PublicProjectC
 	const mainAsset = f?.targetAsset ?? f?.acceptedAssets[0];
 	const pct = fundingProgress(f);
 	const funded = pct !== null && pct >= 100;
+	const qc = useQueryClient();
+	const warm = () => prefetchProject(qc, p.slug);
 	return (
 		<li data-reveal="up" style={{ "--d": index % 3 } as CSSProperties} className="h-full">
 			<Link
 				href={routes.project(p.slug)}
+				onMouseEnter={warm}
+				onFocus={warm}
+				onTouchStart={warm}
 				className="group flex h-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#11121A] transition-[border-color,transform,box-shadow] duration-300 ease-(--ease-settle) hover:-translate-y-1 hover:border-primary-500/50 hover:shadow-2xl hover:shadow-primary-500/10 focus-visible:ring-2 focus-visible:ring-primary-400 focus-visible:outline-none"
 			>
 				<div className={cn("relative h-28 bg-gradient-to-br to-transparent", tintFor(p.category.slug))}>

@@ -9,6 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@repo/ui/popover";
 import { cn } from "@repo/ui/lib/utils";
 import { accountTokens, builderApi, walletApi } from "@/lib/api/client";
 import { resetDemoData } from "@/lib/api/source";
+import { clearSavedQueryCache } from "@/lib/query-cache";
 import { notify } from "@/lib/use-toast";
 import { useWallet } from "@/features/wallet/store";
 
@@ -53,6 +54,7 @@ export function DemoControls() {
 		accountTokens.clear();
 		useWallet.getState().clear();
 		qc.clear();
+		clearSavedQueryCache();
 		notify.success("Demo data reset", "Signed out and wallet disconnected.");
 		// Full reload: every store and query starts from the fresh seed.
 		setTimeout(() => window.location.reload(), 600);

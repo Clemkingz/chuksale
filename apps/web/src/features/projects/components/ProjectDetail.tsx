@@ -52,7 +52,16 @@ import { preloadWallets } from "@/features/wallet/kit";
 
 const d = (i: number) => ({ "--d": i }) as CSSProperties;
 
-export function ProjectDetail({ project: p, preview = false }: { project: PublicProject; preview?: boolean }) {
+export function ProjectDetail({
+	project: p,
+	preview = false,
+	partial = false,
+}: {
+	project: PublicProject;
+	preview?: boolean;
+	/** Only the card's fields so far (opened from a card); the story and builder fill in when the page lands. */
+	partial?: boolean;
+}) {
 	const f = p.funding;
 	const code = f?.targetAsset?.code ?? f?.acceptedAssets[0]?.code ?? "XLM";
 	const pct = fundingProgress(f);
@@ -157,6 +166,17 @@ export function ProjectDetail({ project: p, preview = false }: { project: Public
 						)}
 
 						<div className="mt-10 flex flex-col gap-8">
+							{partial && (
+								<div aria-hidden className="flex flex-col gap-3">
+									<span className="skeleton-shimmer block h-6 w-40 rounded" />
+									<span className="skeleton-shimmer block h-4 w-full rounded" />
+									<span className="skeleton-shimmer block h-4 w-11/12 rounded" />
+									<span className="skeleton-shimmer block h-4 w-4/5 rounded" />
+									<span className="skeleton-shimmer mt-5 block h-6 w-36 rounded" />
+									<span className="skeleton-shimmer block h-4 w-full rounded" />
+									<span className="skeleton-shimmer block h-4 w-3/4 rounded" />
+								</div>
+							)}
 							{[
 								{ title: "The problem", body: p.problem },
 								{ title: "The solution", body: p.solution },

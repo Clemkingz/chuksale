@@ -9,7 +9,9 @@ import { errorMessage } from "@/lib/api/errors";
 import { routes } from "@/lib/routes";
 import { withBasePath } from "@/lib/site";
 import { ErrorState } from "@/components/States";
-import { useCategories, useFeaturedProjects, useProjectCount } from "@/features/projects/hooks";
+import { useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { prefetchExplore, useCategories, useFeaturedProjects, useProjectCount } from "@/features/projects/hooks";
 import { ProjectCard, ProjectCardSkeleton } from "@/features/projects/components/ProjectCard";
 
 /**
@@ -24,6 +26,12 @@ export function HomeView() {
 	const raising = useProjectCount({ fundraising: true });
 	const featured = useFeaturedProjects();
 	const categories = useCategories();
+	const qc = useQueryClient();
+	const homeReady = featured.isSuccess;
+	// Once Home has what it needs, get the Projects page ready in the background.
+	useEffect(() => {
+		if (homeReady) prefetchExplore(qc);
+	}, [homeReady, qc]);
 
 	return (
 		<div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type {
 	Page,
 	ProjectStage,
@@ -15,6 +15,7 @@ import type {
 	SuggestionType,
 } from "@repo/domain/types";
 import { api, cleanParams, unwrap } from "@/lib/api/client";
+import { useSaved } from "@/lib/query-cache";
 
 /** Public discovery (backend guide, "Discovery"): only approved, published projects ever come back. */
 
@@ -37,10 +38,14 @@ export const projectKeys = {
 	detail: (slug: string) => ["projects", "detail", slug] as const,
 };
 
-export function useProjects(f: ExploreFilters, limit = 9) {
-	return useQuery({
-		queryKey: projectKeys.list(f, limit),
-		queryFn: async () =>
+export const EXPLORE_PAGE = 9;
+
+/** Explore with no filters (what the "Projects" link opens). */
+export const DEFAULT_EXPLORE: ExploreFilters = { q: "", category: "", stage: "", type: "", fundraising: "", asset: "", sort: "featured", page: 1 };
+
+const listQuery = (f: ExploreFilters, limit: number) => ({
+	queryKey: projectKeys.list(f, limit),
+	queryFn: async () =>
 			unwrap<Page<PublicProjectCard>>(
 				await api.get("/projects", {
 					params: cleanParams({
@@ -56,23 +61,38 @@ export function useProjects(f: ExploreFilters, limit = 9) {
 					}),
 				}),
 			),
-		placeholderData: keepPreviousData,
-	});
+});
+
+export function useProjects(f: ExploreFilters, limit = EXPLORE_PAGE) {
+	const q = listQuery(f, limit);
+	const saved = useSaved<Page<PublicProjectCard>>(q.queryKey);
+	// While filters change, keep the previous page on screen; on a return visit, the saved one.
+	return useQuery({ ...q, placeholderData: (prev) => keepPreviousData(prev) ?? saved });
+}
+
+/** Loads the first Explore page in the background (from Home), so "Projects" opens with its list ready. */
+export function prefetchExplore(qc: QueryClient) {
+	void qc.prefetchQuery(listQuery(DEFAULT_EXPLORE, EXPLORE_PAGE));
 }
 
 /** The home row: featured first, then newest (the API's default sort). */
 export function useFeaturedProjects(limit = 6) {
+	const queryKey = ["projects", "featured", limit];
+	const saved = useSaved<Page<PublicProjectCard>>(queryKey);
 	return useQuery({
-		queryKey: ["projects", "featured", limit],
+		queryKey,
 		queryFn: async () => unwrap<Page<PublicProjectCard>>(await api.get("/projects", { params: { sort: "featured", limit } })),
+		placeholderData: saved,
 	});
 }
 
 export function useCategories() {
+	const saved = useSaved<PublicCategory[]>(["categories"]);
 	return useQuery({
 		queryKey: ["categories"],
 		queryFn: async () => unwrap<PublicCategory[]>(await api.get("/categories")),
 		staleTime: 5 * 60_000,
+		placeholderData: saved,
 	});
 }
 
@@ -80,13 +100,46 @@ export function useCategories() {
  * The public project page. The API counts a view each time it's fetched, so it's cached for the visit (a trip to
  * Contribute and back reuses it) instead of refetching on focus.
  */
+const projectQuery = (slug: string) => ({
+	queryKey: projectKeys.detail(slug),
+	queryFn: async () => unwrap<PublicProject>(await api.get(`/projects/${slug}`)),
+	staleTime: 5 * 60_000,
+});
+
 export function useProject(slug: string) {
+	const qc = useQueryClient();
+	const saved = useSaved<PublicProject>(projectKeys.detail(slug));
 	return useQuery({
-		queryKey: projectKeys.detail(slug),
-		queryFn: async () => unwrap<PublicProject>(await api.get(`/projects/${slug}`)),
-		staleTime: 5 * 60_000,
+		...projectQuery(slug),
+		// A return visit shows the saved page; opened from a card, what the card knows. The response replaces both.
+		placeholderData: () => saved ?? fromCard(qc, slug),
 		retry: (n, e) => n < 2 && (e as { response?: { status?: number } })?.response?.status !== 404,
 	});
+}
+
+/** Starts loading a project before the click (card hover, focus or touch). No-op when it's already fresh. */
+export function prefetchProject(qc: QueryClient, slug: string) {
+	void qc.prefetchQuery(projectQuery(slug));
+}
+
+/** A partial project page from any cached card with this slug (lists, featured row). */
+function fromCard(qc: QueryClient, slug: string): PublicProject | undefined {
+	for (const [, data] of qc.getQueriesData<Page<PublicProjectCard>>({ queryKey: projectKeys.all })) {
+		const card = data?.result?.find?.((c) => c.slug === slug);
+		if (!card) continue;
+		return {
+			...card,
+			builder: { ...card.builder, bio: null, websiteUrl: null, contactEmail: null, socialLinks: [], walletAddress: null, bannerUrl: null },
+			problem: "",
+			solution: "",
+			beneficiaries: "",
+			teamMembers: [],
+			links: [],
+			payoutAddress: null,
+			updatedAt: card.publishedAt,
+		};
+	}
+	return undefined;
 }
 
 export const PROJECT_CONTRIBUTIONS_PAGE = 8;
@@ -134,8 +187,11 @@ export function useProjectUpdates(slug: string) {
 
 /** How many public projects match (`paginationMeta.totalCount` of a 1-item page): home stats. */
 export function useProjectCount(params: Pick<PublicProjectsQuery, "fundraising" | "featured"> = {}) {
+	const queryKey = ["projects", "count", params];
+	const saved = useSaved<number>(queryKey);
 	return useQuery({
-		queryKey: ["projects", "count", params],
+		queryKey,
+		placeholderData: saved,
 		queryFn: async () =>
 			unwrap<Page<PublicProjectCard>>(await api.get("/projects", { params: cleanParams({ ...params, limit: 1 }) })).paginationMeta
 				.totalCount,
