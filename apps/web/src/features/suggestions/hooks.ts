@@ -29,7 +29,10 @@ export function useCreateSuggestion(slug: string) {
 
 export function useReport() {
 	return useMutation({
-		mutationFn: async (v: { target: { kind: "suggestion"; id: string } | { kind: "project"; slug: string }; input: ReportInput }) =>
+		mutationFn: async (v: {
+			target: { kind: "suggestion"; id: string } | { kind: "project"; slug: string };
+			input: ReportInput;
+		}) =>
 			unwrap<ReportReceipt>(
 				await walletApi.post(
 					v.target.kind === "suggestion" ? `/suggestions/${v.target.id}/reports` : `/projects/${v.target.slug}/reports`,

@@ -18,9 +18,11 @@ export function RestrictDialog({ address: fixed, onClose }: { address?: string; 
 	const [days, setDays] = useState("");
 	const [touched, setTouched] = useState(false);
 	const errs = restrict.isError ? detailsByField(restrict.error) : {};
-	const addrError = touched && !G_ADDRESS.test(address.trim()) ? "Enter a Stellar address (56 characters, starts with G)." : undefined;
+	const addrError =
+		touched && !G_ADDRESS.test(address.trim()) ? "Enter a Stellar address (56 characters, starts with G)." : undefined;
 	const reasonError = touched && !reason.trim() ? "Write a reason." : errs.reason;
-	const daysError = touched && days && !(Number.isInteger(Number(days)) && Number(days) > 0) ? "Use a whole number of days." : errs.days;
+	const daysError =
+		touched && days && !(Number.isInteger(Number(days)) && Number(days) > 0) ? "Use a whole number of days." : errs.days;
 
 	return (
 		<Dialog open onOpenChange={(o) => !o && !restrict.isPending && onClose()}>
@@ -28,8 +30,8 @@ export function RestrictDialog({ address: fixed, onClose }: { address?: string; 
 				<DialogHeader>
 					<DialogTitle className="font-display text-xl">Restrict a wallet</DialogTitle>
 					<DialogDescription className="text-white/65">
-						It can’t send suggestions or reports while restricted (it gets a 403 with your reason and the end date). Contributions are
-						never blocked.
+						It can’t send suggestions or reports while restricted (it gets a 403 with your reason and the end date). Contributions
+						are never blocked.
 					</DialogDescription>
 				</DialogHeader>
 				<form
@@ -95,12 +97,20 @@ export function RestrictDialog({ address: fixed, onClose }: { address?: string; 
 						/>
 						{daysError && <span className="mt-1 block text-sm text-error-200">{daysError}</span>}
 					</label>
-					{restrict.isError && !errs.reason && !errs.days && <p className="text-sm text-error-200">{errorMessage(restrict.error)}</p>}
+					{restrict.isError && !errs.reason && !errs.days && (
+						<p className="text-sm text-error-200">{errorMessage(restrict.error)}</p>
+					)}
 					<DialogFooter className="gap-2 sm:gap-2">
 						<Button type="button" variant="ghost" className="w-auto px-5" onClick={onClose} disabled={restrict.isPending}>
 							Cancel
 						</Button>
-						<Button type="submit" variant="destructive" className="w-auto px-5" isLoading={restrict.isPending} loadingLabel="Restricting">
+						<Button
+							type="submit"
+							variant="destructive"
+							className="w-auto px-5"
+							isLoading={restrict.isPending}
+							loadingLabel="Restricting"
+						>
 							Restrict wallet
 						</Button>
 					</DialogFooter>

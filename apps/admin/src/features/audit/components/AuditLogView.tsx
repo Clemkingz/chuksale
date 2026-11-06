@@ -149,7 +149,9 @@ export function AuditLogView() {
 													<div key={label} className="min-w-0">
 														<p className="text-xs text-white/50">{label}</p>
 														<pre className="mt-1 max-h-72 overflow-auto rounded-lg bg-black/40 p-3 text-xs leading-5 text-white/80">
-															{v === null || (typeof v === "object" && Object.keys(v).length === 0) ? "—" : JSON.stringify(v, null, 2)}
+															{v === null || (typeof v === "object" && Object.keys(v).length === 0)
+																? "—"
+																: JSON.stringify(v, null, 2)}
 														</pre>
 													</div>
 												))}
@@ -176,7 +178,19 @@ function Item({ label, children }: { label: string; children: React.ReactNode })
 	);
 }
 
-function DateInput({ label, value, min, max, onChange }: { label: string; value: string; min?: string; max?: string; onChange: (v: string) => void }) {
+function DateInput({
+	label,
+	value,
+	min,
+	max,
+	onChange,
+}: {
+	label: string;
+	value: string;
+	min?: string;
+	max?: string;
+	onChange: (v: string) => void;
+}) {
 	return (
 		<label className="relative inline-flex items-center">
 			<span className="sr-only">{label}</span>

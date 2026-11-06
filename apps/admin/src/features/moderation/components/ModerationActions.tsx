@@ -87,8 +87,8 @@ function ReasonDialog({
 						{action === "hide" ? "Hide this suggestion?" : "Reject this suggestion?"}
 					</DialogTitle>
 					<DialogDescription className="text-white/65">
-						“{title}” {action === "hide" ? "will be removed from the project page." : "won’t be published."} The sender sees your note
-						in their history; it’s also in the audit log.
+						“{title}” {action === "hide" ? "will be removed from the project page." : "won’t be published."} The sender sees your
+						note in their history; it’s also in the audit log.
 					</DialogDescription>
 				</DialogHeader>
 				<div className="flex flex-wrap gap-2">
@@ -118,7 +118,9 @@ function ReasonDialog({
 				/>
 				{moderate.isError && (
 					<p className="text-sm text-error-200">
-						{errorStatus(moderate.error) === 409 ? `${errorMessage(moderate.error)} Reload to see its current status.` : errorMessage(moderate.error)}
+						{errorStatus(moderate.error) === 409
+							? `${errorMessage(moderate.error)} Reload to see its current status.`
+							: errorMessage(moderate.error)}
 					</p>
 				)}
 				<DialogFooter className="gap-2 sm:gap-2">

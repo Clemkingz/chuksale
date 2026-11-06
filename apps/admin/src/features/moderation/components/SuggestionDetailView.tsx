@@ -87,7 +87,8 @@ export function SuggestionDetailView({ id }: { id: string }) {
 					</dl>
 					{s.moderationNote && (
 						<p className="mt-4 text-sm whitespace-pre-line text-white/60">
-							Moderation note{s.moderatedBy ? ` (by ${s.moderatedBy}${s.moderatedAt ? `, ${timeAgo(s.moderatedAt)}` : ""})` : ""}: {s.moderationNote}
+							Moderation note{s.moderatedBy ? ` (by ${s.moderatedBy}${s.moderatedAt ? `, ${timeAgo(s.moderatedAt)}` : ""})` : ""}:{" "}
+							{s.moderationNote}
 						</p>
 					)}
 					<section aria-labelledby="reports-title" className="mt-8">

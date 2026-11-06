@@ -96,7 +96,10 @@ export function ProjectsView() {
 					label="Category"
 					value={filters.categoryId}
 					onChange={(v) => set({ category: v, page: 1 })}
-					options={[["", "All categories"], ...(categories.data?.map((c) => [c.id, c.isActive ? c.name : `${c.name} (inactive)`] as [string, string]) ?? [])]}
+					options={[
+						["", "All categories"],
+						...(categories.data?.map((c) => [c.id, c.isActive ? c.name : `${c.name} (inactive)`] as [string, string]) ?? []),
+					]}
 				/>
 				<Select
 					label="Listing"
@@ -127,7 +130,11 @@ export function ProjectsView() {
 					]}
 				/>
 				{filtered && (
-					<button type="button" onClick={() => set(clear)} className="ml-1 rounded-md px-2 py-1 text-sm text-primary-300 hover:bg-white/5">
+					<button
+						type="button"
+						onClick={() => set(clear)}
+						className="ml-1 rounded-md px-2 py-1 text-sm text-primary-300 hover:bg-white/5"
+					>
 						Clear filters
 					</button>
 				)}
@@ -151,7 +158,10 @@ export function ProjectsView() {
 				role="tabpanel"
 				aria-labelledby={`tab-${tab}`}
 				aria-busy={list.isFetching}
-				className={cn("admin-card mt-6 overflow-hidden transition-opacity duration-200 md:mt-8", list.isPlaceholderData && "opacity-60")}
+				className={cn(
+					"admin-card mt-6 overflow-hidden transition-opacity duration-200 md:mt-8",
+					list.isPlaceholderData && "opacity-60",
+				)}
 			>
 				{list.isPending ? (
 					<RowsSkeleton rows={7} cols={6} />
@@ -162,7 +172,13 @@ export function ProjectsView() {
 				) : data && data.result.length === 0 ? (
 					<EmptyState
 						icon={filtered ? <SearchX className="size-6" aria-hidden /> : undefined}
-						title={filtered ? "No projects match these filters" : tab === "submitted" ? "Nothing waiting for review" : "No projects here"}
+						title={
+							filtered
+								? "No projects match these filters"
+								: tab === "submitted"
+									? "Nothing waiting for review"
+									: "No projects here"
+						}
 						description={filtered ? "Try another search or fewer filters." : "Projects show up here once builders submit them."}
 						action={
 							filtered ? (
@@ -228,7 +244,9 @@ export function ProjectsView() {
 										</td>
 										<td className="px-3">
 											<StatusPill status={p.status} />
-											{p.status === "approved" && !p.published && <span className="mt-0.5 block text-xs text-white/50">Not listed</span>}
+											{p.status === "approved" && !p.published && (
+												<span className="mt-0.5 block text-xs text-white/50">Not listed</span>
+											)}
 											{p.featured && <span className="mt-0.5 block text-xs text-primary-300">Featured</span>}
 										</td>
 										<td className="px-3 text-center">
@@ -241,7 +259,12 @@ export function ProjectsView() {
 
 						<ul className="divide-y divide-white/10 lg:hidden">
 							{data.result.map((p, i) => (
-								<li key={p.id} data-reveal="up" style={{ "--d": i } as CSSProperties} className="flex flex-col gap-3 px-4 py-4 sm:px-5">
+								<li
+									key={p.id}
+									data-reveal="up"
+									style={{ "--d": i } as CSSProperties}
+									className="flex flex-col gap-3 px-4 py-4 sm:px-5"
+								>
 									<div className="flex items-start gap-3">
 										<Avatar name={p.title} className="size-11 text-xs" />
 										<div className="min-w-0 flex-1">

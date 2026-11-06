@@ -75,7 +75,13 @@ export function BuildersView() {
 			<ul className="mt-6 grid gap-4 sm:grid-cols-3 md:gap-7">
 				<IconStat i={0} icon={<UsersRound className="size-7" />} value={builders.data} label="Builders" />
 				<IconStat i={1} icon={<ShieldCheck className="size-7" />} value={admins.data} label="Admins" />
-				<IconStat i={2} icon={<UserX className="size-7" />} value={suspended.data} label="Suspended" hint="Can’t sign in until restored" />
+				<IconStat
+					i={2}
+					icon={<UserX className="size-7" />}
+					value={suspended.data}
+					label="Suspended"
+					hint="Can’t sign in until restored"
+				/>
 			</ul>
 
 			<div className="mt-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -148,7 +154,12 @@ export function BuildersView() {
 							</thead>
 							<tbody>
 								{d.result.map((u, i) => (
-									<tr key={u.id} data-reveal="up" style={{ "--d": i } as CSSProperties} className="border-t border-white/10 hover:bg-white/[0.025]">
+									<tr
+										key={u.id}
+										data-reveal="up"
+										style={{ "--d": i } as CSSProperties}
+										className="border-t border-white/10 hover:bg-white/[0.025]"
+									>
 										<td className="px-6 py-4">
 											<div className="flex min-w-0 items-center gap-3">
 												<Avatar name={u.name} className="size-10 text-xs" />

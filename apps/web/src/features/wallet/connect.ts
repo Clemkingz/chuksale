@@ -83,14 +83,17 @@ export async function connectAnyWallet(
 	const address =
 		id === "demo"
 			? await connectDemo()
-			: await (await import("@/features/wallet/kit")).connectWallet(id, {
+			: await (
+					await import("@/features/wallet/kit")
+				).connectWallet(id, {
 					onAppMissed: options.onAppMissed,
 					networkPassphrase: network.networkPassphrase,
 				});
 
 	options.onStage?.("sign");
 	const challenge = unwrap<WalletChallenge>(await api.post("/wallet-auth/challenge", { address }));
-	if (challenge.networkPassphrase !== network.networkPassphrase) throw new Error("Switch your wallet to Testnet, then try again.");
+	if (challenge.networkPassphrase !== network.networkPassphrase)
+		throw new Error("Switch your wallet to Testnet, then try again.");
 	const signed = await signAny(id, challenge.transaction, address, challenge.networkPassphrase);
 
 	options.onStage?.("verify");

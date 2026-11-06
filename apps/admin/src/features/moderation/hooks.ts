@@ -17,7 +17,13 @@ import { api, cleanParams, unwrap } from "@/lib/api/client";
 
 export const MOD_PAGE = 10;
 
-export type SuggestionFilters = { status: SuggestionStatus | ""; reported: boolean; address?: string; projectId?: string; page: number };
+export type SuggestionFilters = {
+	status: SuggestionStatus | "";
+	reported: boolean;
+	address?: string;
+	projectId?: string;
+	page: number;
+};
 
 export function useAdminSuggestions(f: SuggestionFilters) {
 	return useQuery({
@@ -43,8 +49,8 @@ export function useSuggestionCount(params: { status?: SuggestionStatus; reported
 	return useQuery({
 		queryKey: ["admin", "suggestions", "count", params],
 		queryFn: async () =>
-			unwrap<Page<AdminSuggestion>>(await api.get("/admin/suggestions", { params: cleanParams({ ...params, limit: 1 }) })).paginationMeta
-				.totalCount,
+			unwrap<Page<AdminSuggestion>>(await api.get("/admin/suggestions", { params: cleanParams({ ...params, limit: 1 }) }))
+				.paginationMeta.totalCount,
 	});
 }
 

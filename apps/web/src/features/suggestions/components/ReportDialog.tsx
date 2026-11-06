@@ -88,7 +88,9 @@ export function ReportDialog({ target, onClose }: { target: ReportTarget; onClos
 						className="w-full resize-y rounded-lg border border-white/20 bg-transparent px-3.5 py-2.5 text-sm outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30"
 					/>
 				</label>
-				{report.isError && errorStatus(report.error) !== 409 && <p className="text-sm text-error-200">{errorMessage(report.error)}</p>}
+				{report.isError && errorStatus(report.error) !== 409 && (
+					<p className="text-sm text-error-200">{errorMessage(report.error)}</p>
+				)}
 				<DialogFooter className="gap-2 sm:gap-2">
 					<Button variant="ghost" className="w-auto px-5" onClick={onClose} disabled={report.isPending}>
 						Cancel

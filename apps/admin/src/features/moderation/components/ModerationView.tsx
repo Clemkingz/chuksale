@@ -58,7 +58,9 @@ export function ModerationView() {
 	return (
 		<div className="admin-container pt-2 md:pt-6">
 			<PageTitle>Moderation</PageTitle>
-			<p className="mt-2 text-white/60">New suggestions stay private until approved. Titles and bodies are shown as plain text.</p>
+			<p className="mt-2 text-white/60">
+				New suggestions stay private until approved. Titles and bodies are shown as plain text.
+			</p>
 			<div className="mt-6">
 				<UnderlineTabs
 					label="Moderation"
@@ -136,18 +138,27 @@ function SuggestionsQueue() {
 								<div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
 									<div className="min-w-0">
 										<div className="flex flex-wrap items-center gap-2 text-xs">
-											<span className={cn("rounded-full px-2.5 py-0.5", SUGGESTION_TONE[s.status])}>{SUGGESTION_STATUS_LABEL[s.status]}</span>
-											<span className="rounded-full bg-white/[0.06] px-2.5 py-0.5 text-white/70">{SUGGESTION_TYPE_LABEL[s.type]}</span>
+											<span className={cn("rounded-full px-2.5 py-0.5", SUGGESTION_TONE[s.status])}>
+												{SUGGESTION_STATUS_LABEL[s.status]}
+											</span>
+											<span className="rounded-full bg-white/[0.06] px-2.5 py-0.5 text-white/70">
+												{SUGGESTION_TYPE_LABEL[s.type]}
+											</span>
 											{s.openReportCount > 0 && (
 												<span className="inline-flex items-center gap-1 rounded-full bg-error-400/15 px-2.5 py-0.5 text-error-100">
 													<Flag className="size-3" /> {s.openReportCount} open report{s.openReportCount === 1 ? "" : "s"}
 												</span>
 											)}
 										</div>
-										<Link href={routes.suggestion(s.id)} className="mt-2 block font-display text-lg font-bold break-words hover:text-primary-300">
+										<Link
+											href={routes.suggestion(s.id)}
+											className="mt-2 block font-display text-lg font-bold break-words hover:text-primary-300"
+										>
 											{s.title}
 										</Link>
-										<p className="mt-1 line-clamp-2 text-[15px] leading-6 break-words whitespace-pre-line text-white/75">{s.body}</p>
+										<p className="mt-1 line-clamp-2 text-[15px] leading-6 break-words whitespace-pre-line text-white/75">
+											{s.body}
+										</p>
 										<p className="mt-2 text-xs text-white/45">
 											On <span className="text-white/70">{s.project.title}</span> ·{" "}
 											<Link href={routes.contributor(s.walletAddress)} className="hover:text-primary-300">
@@ -223,7 +234,10 @@ function ReportsQueue() {
 				) : d ? (
 					<ul>
 						{d.result.map((r) => (
-							<li key={r.id} className="flex flex-col gap-3 border-t border-white/10 px-5 py-4 first:border-0 md:flex-row md:items-start md:justify-between md:px-6">
+							<li
+								key={r.id}
+								className="flex flex-col gap-3 border-t border-white/10 px-5 py-4 first:border-0 md:flex-row md:items-start md:justify-between md:px-6"
+							>
 								<div className="min-w-0">
 									<p className="text-xs text-white/50">
 										{r.entityType === "project" ? "Project" : "Suggestion"} · {REPORT_REASON_LABEL[r.reason]} ·{" "}
@@ -364,9 +378,16 @@ function Restrictions() {
 				) : (
 					<ul>
 						{q.data.map((r) => (
-							<li key={r.address} className="flex flex-col gap-3 border-t border-white/10 px-5 py-4 first:border-0 sm:flex-row sm:items-center sm:justify-between md:px-6">
+							<li
+								key={r.address}
+								className="flex flex-col gap-3 border-t border-white/10 px-5 py-4 first:border-0 sm:flex-row sm:items-center sm:justify-between md:px-6"
+							>
 								<div className="min-w-0">
-									<Link href={routes.contributor(r.address)} className="block truncate font-mono text-sm hover:text-primary-300" title={r.address}>
+									<Link
+										href={routes.contributor(r.address)}
+										className="block truncate font-mono text-sm hover:text-primary-300"
+										title={r.address}
+									>
 										{shortKey(r.address, 10, 8)}
 									</Link>
 									<p className="mt-0.5 text-sm whitespace-pre-line text-white/75">{r.reason}</p>

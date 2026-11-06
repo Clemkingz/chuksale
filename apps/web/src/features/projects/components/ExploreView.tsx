@@ -127,7 +127,10 @@ export function ExploreView() {
 							label="Asset"
 							value={f.asset}
 							onChange={(v) => set({ asset: v, page: 1 })}
-							options={[["", "Any asset"], ...(network.data?.assets.map((a) => [a.id, `Accepts ${a.code}`] as [string, string]) ?? [])]}
+							options={[
+								["", "Any asset"],
+								...(network.data?.assets.map((a) => [a.id, `Accepts ${a.code}`] as [string, string]) ?? []),
+							]}
 						/>
 						<Select
 							label="Sort"
@@ -144,9 +147,7 @@ export function ExploreView() {
 			</div>
 
 			<div className="mt-8 flex items-center justify-between text-sm text-white/55" aria-live="polite">
-				<span>
-					{d ? `${d.paginationMeta.totalCount} project${d.paginationMeta.totalCount === 1 ? "" : "s"}` : " "}
-				</span>
+				<span>{d ? `${d.paginationMeta.totalCount} project${d.paginationMeta.totalCount === 1 ? "" : "s"}` : " "}</span>
 				{filtered && (
 					<button
 						type="button"

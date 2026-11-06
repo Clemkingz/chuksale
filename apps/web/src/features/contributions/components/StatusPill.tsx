@@ -13,12 +13,7 @@ export const STATUS_TONE: Record<ContributionStatus, string> = {
 };
 
 export function ContributionStatusPill({ status, className }: { status: ContributionStatus; className?: string }) {
-	const Icon =
-		status === "confirmed"
-			? CheckCircle2
-			: status === "pending" || status === "awaiting_signature"
-				? Clock
-				: XCircle;
+	const Icon = status === "confirmed" ? CheckCircle2 : status === "pending" || status === "awaiting_signature" ? Clock : XCircle;
 	return (
 		<span className={cn("inline-flex items-center gap-1.5 text-sm whitespace-nowrap", STATUS_TONE[status], className)}>
 			<Icon className="size-4 shrink-0" aria-hidden />

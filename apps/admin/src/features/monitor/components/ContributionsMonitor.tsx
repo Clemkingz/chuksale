@@ -61,7 +61,13 @@ export function ContributionsMonitor() {
 	const [search, setSearch] = useState(address);
 	const [open, setOpen] = useState<string | null>(null);
 	const list = useAdminContributions(
-		{ status: tab === "all" ? "" : tab, address: address || undefined, projectId: projectId || undefined, limit: PAGE, offset: (page - 1) * PAGE },
+		{
+			status: tab === "all" ? "" : tab,
+			address: address || undefined,
+			projectId: projectId || undefined,
+			limit: PAGE,
+			offset: (page - 1) * PAGE,
+		},
 		true,
 	);
 	const reconcile = useReconcile();
@@ -136,7 +142,12 @@ export function ContributionsMonitor() {
 						{d.result.map((c, i) => {
 							const expanded = open === c.id;
 							return (
-								<li key={c.id} data-reveal="up" style={{ "--d": Math.min(i, 8) } as CSSProperties} className="border-t border-white/10 first:border-0">
+								<li
+									key={c.id}
+									data-reveal="up"
+									style={{ "--d": Math.min(i, 8) } as CSSProperties}
+									className="border-t border-white/10 first:border-0"
+								>
 									<button
 										type="button"
 										aria-expanded={expanded}
@@ -146,7 +157,9 @@ export function ContributionsMonitor() {
 										<WalletDot address={c.contributorAddress} className="size-8 ring-0" />
 										<span className="min-w-0 flex-1">
 											<span className="block truncate">{c.project.title}</span>
-											<span className="block truncate font-mono text-xs text-white/50">{shortKey(c.contributorAddress, 8, 6)}</span>
+											<span className="block truncate font-mono text-xs text-white/50">
+												{shortKey(c.contributorAddress, 8, 6)}
+											</span>
 										</span>
 										<span className="font-medium whitespace-nowrap tabular-nums">
 											{formatAmount(c.amount)} {c.asset.code}
@@ -160,7 +173,10 @@ export function ContributionsMonitor() {
 									{expanded && (
 										<div className="animate-rise grid gap-x-8 gap-y-3 border-t border-white/5 bg-white/[0.015] px-5 py-4 text-sm sm:grid-cols-2 md:px-6">
 											<Detail label="From">
-												<Link href={routes.contributor(c.contributorAddress)} className="font-mono break-all hover:text-primary-300">
+												<Link
+													href={routes.contributor(c.contributorAddress)}
+													className="font-mono break-all hover:text-primary-300"
+												>
 													{c.contributorAddress}
 												</Link>
 											</Detail>
@@ -175,7 +191,12 @@ export function ContributionsMonitor() {
 												<span className="font-mono">{c.memo}</span>
 											</Detail>
 											<Detail label="Transaction">
-												<a href={c.explorerUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-mono hover:text-primary-300">
+												<a
+													href={c.explorerUrl}
+													target="_blank"
+													rel="noopener noreferrer"
+													className="inline-flex items-center gap-1 font-mono hover:text-primary-300"
+												>
 													{shortKey(c.txHash, 10, 8)} <ExternalLink className="size-3.5" />
 												</a>
 											</Detail>

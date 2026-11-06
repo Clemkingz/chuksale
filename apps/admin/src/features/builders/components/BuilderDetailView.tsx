@@ -72,7 +72,10 @@ export function BuilderDetailView({ id }: { id: string }) {
 			<div className="admin-container">
 				<div className="-mt-11 flex flex-col gap-6 sm:-mt-14 lg:flex-row lg:items-end lg:justify-between">
 					{u ? (
-						<Avatar name={u.name} className="animate-pop size-[88px] text-2xl ring-4 ring-surface-900 sm:size-[112px] sm:text-3xl" />
+						<Avatar
+							name={u.name}
+							className="animate-pop size-[88px] text-2xl ring-4 ring-surface-900 sm:size-[112px] sm:text-3xl"
+						/>
 					) : (
 						<span className="skeleton-shimmer block size-[88px] rounded-full ring-4 ring-surface-900 sm:size-[112px]" />
 					)}
@@ -123,7 +126,10 @@ export function BuilderDetailView({ id }: { id: string }) {
 								<ErrorState message={errorMessage(projects.error)} onRetry={() => void projects.refetch()} />
 							</div>
 						) : mine.length === 0 ? (
-							<EmptyState title="Nothing submitted yet" description="Drafts stay private to the builder until they submit them." />
+							<EmptyState
+								title="Nothing submitted yet"
+								description="Drafts stay private to the builder until they submit them."
+							/>
 						) : (
 							<ul>
 								{mine.map((p, i) => (

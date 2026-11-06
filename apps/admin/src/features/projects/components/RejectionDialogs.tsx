@@ -160,7 +160,9 @@ export function RejectProjectDialog({ project, onClose }: { project: { id: strin
 
 				{save.isError && !serverError && (
 					<p className="rounded-lg border border-error-400/30 bg-error-400/10 px-3.5 py-2.5 text-sm text-error-100">
-						{errorStatus(save.error) === 409 ? `${errorMessage(save.error)} Reload to see its current status.` : errorMessage(save.error)}
+						{errorStatus(save.error) === 409
+							? `${errorMessage(save.error)} Reload to see its current status.`
+							: errorMessage(save.error)}
 					</p>
 				)}
 				<DialogFooter className="gap-2 sm:gap-2">
@@ -250,7 +252,8 @@ export function RejectionReasonDialog({ projectId, onClose }: { projectId: strin
 							</div>
 						</dl>
 						<p className="flex items-center gap-2 text-xs text-white/55">
-							<Bell className="size-3.5 text-primary-300" aria-hidden /> Sent to {p?.owner.displayName ?? p?.owner.name}’s notifications and email.
+							<Bell className="size-3.5 text-primary-300" aria-hidden /> Sent to {p?.owner.displayName ?? p?.owner.name}’s
+							notifications and email.
 						</p>
 					</div>
 				)}

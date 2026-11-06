@@ -39,20 +39,20 @@ later means changing the places listed under "Touches".
 
 The live API (ChuckSales backend, `/docs-json` and the Frontend Integration Guide) now decides these; the apps follow it.
 
-| #   | Now |
-| --- | --- |
-| D1  | Direct payment, wallet to the builder's `payoutAddress`; the API prepares the transaction (memo, fee, 10 min to sign). **RESOLVED** |
-| D2  | Assets come from `GET /stellar/network` (XLM, USDC Testnet). Builders choose accepted assets per project. **RESOLVED** |
-| D3  | Target is informational, stated in one asset. **RESOLVED** |
-| D6  | Email + password + 6-digit email code (staging sends no email). **RESOLVED** |
-| D7  | Admins use the same login, no MFA; created by another admin, set their password with an emailed code. **RESOLVED** (no OTP step) |
-| D8  | Suggestions are `pending` until an admin approves. **RESOLVED** |
-| D11 | Approve publishes and sets the slug; publish/unpublish/feature are separate actions. **RESOLVED** |
-| D12 | No minimum beyond "above 0, ≤7 decimals"; the API checks balance and trustline. **RESOLVED** (min 1 dropped) |
-| D16 | Notifications are for builders and admins only; wallets have none. **RESOLVED** (wallet notifications removed) |
-| D17, D19, D20, D21, D25 | Builder wallet/avatar/socials, logo, "time left", 350×350 images, extra admin profile fields: not in the API, removed. Cover image: JPEG/PNG/WebP ≤5 MB. **RESOLVED** |
-| D22 | Admin project tabs are one per status (the API filters one status at a time). **RESOLVED** |
-| D23 | Wallets can be restricted from suggesting/reporting (never contributing). **RESOLVED** |
-| D24 | Suspended accounts can't sign in and their projects disappear from public lists. **RESOLVED** (changed: projects no longer stay listed) |
-| D26 | Mock is opt-in (`NEXT_PUBLIC_API_SOURCE=mock`); live is the default. **RESOLVED** |
-| D28 | Submission rules are the API's (summary 20–280, problem/solution 50–5000, beneficiaries 10–2000, category, stage, ≥1 team member; fundraising needs target, asset, accepted assets incl. target, payout). **RESOLVED** |
+| #                       | Now                                                                                                                                                                                                                    |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1                      | Direct payment, wallet to the builder's `payoutAddress`; the API prepares the transaction (memo, fee, 10 min to sign). **RESOLVED**                                                                                    |
+| D2                      | Assets come from `GET /stellar/network` (XLM, USDC Testnet). Builders choose accepted assets per project. **RESOLVED**                                                                                                 |
+| D3                      | Target is informational, stated in one asset. **RESOLVED**                                                                                                                                                             |
+| D6                      | Email + password + 6-digit email code (staging sends no email). **RESOLVED**                                                                                                                                           |
+| D7                      | Admins use the same login, no MFA; created by another admin, set their password with an emailed code. **RESOLVED** (no OTP step)                                                                                       |
+| D8                      | Suggestions are `pending` until an admin approves. **RESOLVED**                                                                                                                                                        |
+| D11                     | Approve publishes and sets the slug; publish/unpublish/feature are separate actions. **RESOLVED**                                                                                                                      |
+| D12                     | No minimum beyond "above 0, ≤7 decimals"; the API checks balance and trustline. **RESOLVED** (min 1 dropped)                                                                                                           |
+| D16                     | Notifications are for builders and admins only; wallets have none. **RESOLVED** (wallet notifications removed)                                                                                                         |
+| D17, D19, D20, D21, D25 | Builder wallet/avatar/socials, logo, "time left", 350×350 images, extra admin profile fields: not in the API, removed. Cover image: JPEG/PNG/WebP ≤5 MB. **RESOLVED**                                                  |
+| D22                     | Admin project tabs are one per status (the API filters one status at a time). **RESOLVED**                                                                                                                             |
+| D23                     | Wallets can be restricted from suggesting/reporting (never contributing). **RESOLVED**                                                                                                                                 |
+| D24                     | Suspended accounts can't sign in and their projects disappear from public lists. **RESOLVED** (changed: projects no longer stay listed)                                                                                |
+| D26                     | Mock is opt-in (`NEXT_PUBLIC_API_SOURCE=mock`); live is the default. **RESOLVED**                                                                                                                                      |
+| D28                     | Submission rules are the API's (summary 20–280, problem/solution 50–5000, beneficiaries 10–2000, category, stage, ≥1 team member; fundraising needs target, asset, accepted assets incl. target, payout). **RESOLVED** |

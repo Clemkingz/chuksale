@@ -163,9 +163,7 @@ function ConnectWalletBody({
 								</span>
 								<span className="min-w-0 flex-1">
 									<span className="block text-[17px] text-white">{row.name}</span>
-									<span className="block truncate text-xs text-white/55">
-										{isBusy ? STAGE_COPY[stage] : row.kind}
-									</span>
+									<span className="block truncate text-xs text-white/55">{isBusy ? STAGE_COPY[stage] : row.kind}</span>
 								</span>
 								{isBusy && <BtnLoader className="size-5 text-primary-400" label={`Connecting ${row.name}`} />}
 								{isDone && (

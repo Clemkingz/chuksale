@@ -32,12 +32,15 @@ export function CategoriesView() {
 				onSubmit={(e) => {
 					e.preventDefault();
 					if (name.trim().length < 2) return;
-					add.mutate({ name: name.trim() }, {
-						onSuccess: (c) => {
-							notify.success("Category added", c.name);
-							setName("");
+					add.mutate(
+						{ name: name.trim() },
+						{
+							onSuccess: (c) => {
+								notify.success("Category added", c.name);
+								setName("");
+							},
 						},
-					});
+					);
 				}}
 			>
 				<label className="flex-1">

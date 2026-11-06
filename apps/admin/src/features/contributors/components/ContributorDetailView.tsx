@@ -65,12 +65,18 @@ export function ContributorDetailView({ address }: { address: string }) {
 						className="h-11 w-auto px-5"
 						isLoading={lift.isPending}
 						loadingLabel="Lifting"
-						onClick={() => lift.mutate(address, { onSuccess: () => notify.success("Restriction lifted"), onError: (e) => notify.fromError(e) })}
+						onClick={() =>
+							lift.mutate(address, { onSuccess: () => notify.success("Restriction lifted"), onError: (e) => notify.fromError(e) })
+						}
 					>
 						Lift restriction
 					</Button>
 				) : (
-					<Button variant="outline" className="h-11 w-auto gap-2 border-error-400/40 px-5 text-error-200 hover:bg-error-400/10" onClick={() => setRestricting(true)}>
+					<Button
+						variant="outline"
+						className="h-11 w-auto gap-2 border-error-400/40 px-5 text-error-200 hover:bg-error-400/10"
+						onClick={() => setRestricting(true)}
+					>
 						<Ban className="size-4" /> Restrict from suggesting
 					</Button>
 				)}
@@ -86,7 +92,12 @@ export function ContributorDetailView({ address }: { address: string }) {
 			)}
 
 			<dl className="mt-7 grid gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/10 sm:grid-cols-3">
-				<Fact label="Confirmed total" value={summary ? summary.totals.map((t) => `${formatAmount(t.amount)} ${t.asset.code}`).join(" · ") : list ? "0" : undefined} />
+				<Fact
+					label="Confirmed total"
+					value={
+						summary ? summary.totals.map((t) => `${formatAmount(t.amount)} ${t.asset.code}`).join(" · ") : list ? "0" : undefined
+					}
+				/>
 				<Fact label="Confirmed contributions" value={list ? String(confirmed.length) : undefined} />
 				<Fact label="Projects supported" value={list ? String(summary?.projects ?? 0) : undefined} />
 			</dl>
@@ -106,14 +117,24 @@ export function ContributorDetailView({ address }: { address: string }) {
 				) : (
 					<ul>
 						{list.map((c, i) => (
-							<li key={c.id} data-reveal="up" style={{ "--d": Math.min(i, 8) } as CSSProperties} className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-white/10 px-5 py-3.5 md:px-7">
+							<li
+								key={c.id}
+								data-reveal="up"
+								style={{ "--d": Math.min(i, 8) } as CSSProperties}
+								className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-white/10 px-5 py-3.5 md:px-7"
+							>
 								<Link href={routes.project(c.project.id)} className="min-w-0 flex-1 truncate hover:text-primary-300">
 									{c.project.title}
 								</Link>
 								<span className="tabular-nums">
 									{formatAmount(c.amount)} {c.asset.code}
 								</span>
-								<span className={cn("w-40 text-sm", c.status === "confirmed" ? "text-success-300" : c.status === "failed" ? "text-error-300" : "text-white/60")}>
+								<span
+									className={cn(
+										"w-40 text-sm",
+										c.status === "confirmed" ? "text-success-300" : c.status === "failed" ? "text-error-300" : "text-white/60",
+									)}
+								>
 									{CONTRIBUTION_STATUS_LABEL[c.status]}
 								</span>
 								<span className="w-24 text-right text-sm text-white/55" title={fullDate(c.createdAt)}>

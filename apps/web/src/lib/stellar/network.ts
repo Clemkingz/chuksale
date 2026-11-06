@@ -26,7 +26,8 @@ export function useNetwork() {
 }
 
 /** "USDC · GBBD…LA5" style label: the issuer is shown so lookalike tokens stand out. */
-export const assetLabel = (a: Pick<StellarAsset, "code" | "issuer">) => (a.issuer ? `${a.code} · ${a.issuer.slice(0, 4)}…${a.issuer.slice(-4)}` : a.code);
+export const assetLabel = (a: Pick<StellarAsset, "code" | "issuer">) =>
+	a.issuer ? `${a.code} · ${a.issuer.slice(0, 4)}…${a.issuer.slice(-4)}` : a.code;
 
 /** Balances and trustlines of an account, for each accepted asset (`GET /stellar/accounts/{address}`). */
 export function useAccountSummary(address: string | null) {

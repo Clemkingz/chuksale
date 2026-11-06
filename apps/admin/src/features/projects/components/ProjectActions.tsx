@@ -42,12 +42,34 @@ import { RejectProjectDialog, RejectionReasonDialog } from "@/features/projects/
  * request changes and archive need a reason the builder sees; every action is audit-logged by the API.
  */
 
-type ActionTarget = { id: string; title: string; status: ProjectStatus; published: boolean; featured: boolean; slug?: string | null };
+type ActionTarget = {
+	id: string;
+	title: string;
+	status: ProjectStatus;
+	published: boolean;
+	featured: boolean;
+	slug?: string | null;
+};
 
-const META: Record<ProjectAction, { label: string; icon: typeof CheckCircle2; tone?: string; done: string; group: "review" | "listing" | "other" }> = {
+const META: Record<
+	ProjectAction,
+	{ label: string; icon: typeof CheckCircle2; tone?: string; done: string; group: "review" | "listing" | "other" }
+> = {
 	start_review: { label: "Start review", icon: SearchCheck, done: "Marked as under review", group: "review" },
-	approve: { label: "Approve and publish", icon: CheckCircle2, tone: "text-success-200", done: "Approved and published", group: "review" },
-	request_changes: { label: "Request changes", icon: MessageSquareWarning, tone: "text-warning-200", done: "Changes requested", group: "review" },
+	approve: {
+		label: "Approve and publish",
+		icon: CheckCircle2,
+		tone: "text-success-200",
+		done: "Approved and published",
+		group: "review",
+	},
+	request_changes: {
+		label: "Request changes",
+		icon: MessageSquareWarning,
+		tone: "text-warning-200",
+		done: "Changes requested",
+		group: "review",
+	},
 	reject: { label: "Reject", icon: XCircle, tone: "text-error-200", done: "Project rejected", group: "review" },
 	publish: { label: "Publish", icon: Eye, done: "Published", group: "listing" },
 	unpublish: { label: "Unpublish (also unfeatures)", icon: EyeOff, done: "Hidden from the public", group: "listing" },
@@ -98,7 +120,9 @@ export function ProjectActions({
 		return (
 			<>
 				{!first && <DropdownMenuSeparator className="bg-white/10" />}
-				<DropdownMenuLabel className="px-2.5 pt-1.5 pb-1 text-xs font-normal tracking-wide text-white/45 uppercase">{title}</DropdownMenuLabel>
+				<DropdownMenuLabel className="px-2.5 pt-1.5 pb-1 text-xs font-normal tracking-wide text-white/45 uppercase">
+					{title}
+				</DropdownMenuLabel>
 				{list.map((a) => {
 					const Icon = META[a].icon;
 					return item(a, <Icon className="size-4" />, META[a].label, () => run(a), META[a].tone);
@@ -258,7 +282,9 @@ function ActionDialog({ project, action: a, onClose }: { project: ActionTarget; 
 								reasonError || serverReason ? "border-error-300" : "border-white/30 focus:border-primary-500",
 							)}
 						/>
-						{(reasonError || serverReason) && <p className="animate-rise mt-1.5 text-sm text-error-200">{reasonError ?? serverReason}</p>}
+						{(reasonError || serverReason) && (
+							<p className="animate-rise mt-1.5 text-sm text-error-200">{reasonError ?? serverReason}</p>
+						)}
 					</div>
 					<div>
 						<label htmlFor="action-note" className="mb-2 block text-sm">
@@ -275,7 +301,9 @@ function ActionDialog({ project, action: a, onClose }: { project: ActionTarget; 
 					</div>
 					{save.isError && !serverReason && (
 						<p className="rounded-lg border border-error-400/30 bg-error-400/10 px-3.5 py-2.5 text-sm text-error-100">
-							{errorStatus(save.error) === 409 ? `${errorMessage(save.error)} Reload to see its current status.` : errorMessage(save.error)}
+							{errorStatus(save.error) === 409
+								? `${errorMessage(save.error)} Reload to see its current status.`
+								: errorMessage(save.error)}
 						</p>
 					)}
 				</div>

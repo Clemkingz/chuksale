@@ -39,9 +39,26 @@ export function ContributorsView() {
 			<PageTitle>Contributors</PageTitle>
 
 			<ul className="mt-6 grid gap-4 sm:grid-cols-3 md:gap-7">
-				<IconStat i={0} icon={<UsersRound className="size-7" />} value={rows?.length} label="Wallets" hint={sampled ? `From the latest ${SAMPLE} confirmed` : "With a confirmed contribution"} />
-				<IconStat i={1} icon={<UserCheck className="size-7" />} value={active} label="Active" hint={`Contributed in the last ${ACTIVE_DAYS} days`} />
-				<IconStat i={2} icon={<Wallet className="size-7" />} value={q.data?.paginationMeta.totalCount} label="Confirmed contributions" />
+				<IconStat
+					i={0}
+					icon={<UsersRound className="size-7" />}
+					value={rows?.length}
+					label="Wallets"
+					hint={sampled ? `From the latest ${SAMPLE} confirmed` : "With a confirmed contribution"}
+				/>
+				<IconStat
+					i={1}
+					icon={<UserCheck className="size-7" />}
+					value={active}
+					label="Active"
+					hint={`Contributed in the last ${ACTIVE_DAYS} days`}
+				/>
+				<IconStat
+					i={2}
+					icon={<Wallet className="size-7" />}
+					value={q.data?.paginationMeta.totalCount}
+					label="Confirmed contributions"
+				/>
 			</ul>
 
 			<form
@@ -103,7 +120,12 @@ export function ContributorsView() {
 							</thead>
 							<tbody>
 								{rows.slice((page - 1) * PAGE, page * PAGE).map((r, i) => (
-									<tr key={r.address} data-reveal="up" style={{ "--d": i } as CSSProperties} className="border-t border-white/10 hover:bg-white/[0.025]">
+									<tr
+										key={r.address}
+										data-reveal="up"
+										style={{ "--d": i } as CSSProperties}
+										className="border-t border-white/10 hover:bg-white/[0.025]"
+									>
 										<td className="px-5 py-4 md:px-8">
 											<Link href={routes.contributor(r.address)} className="flex items-center gap-3 hover:text-primary-300">
 												<WalletDot address={r.address} className="size-9 ring-0" />
@@ -112,7 +134,9 @@ export function ContributorsView() {
 												</span>
 											</Link>
 										</td>
-										<td className="px-3 tabular-nums">{r.totals.map((t) => `${formatAmount(t.amount)} ${t.asset.code}`).join(" · ")}</td>
+										<td className="px-3 tabular-nums">
+											{r.totals.map((t) => `${formatAmount(t.amount)} ${t.asset.code}`).join(" · ")}
+										</td>
 										<td className="px-3 text-center tabular-nums">{r.count}</td>
 										<td className="px-3 text-center tabular-nums">{r.projects}</td>
 										<td className="px-3 text-right md:pr-8" title={fullDate(r.lastAt)}>

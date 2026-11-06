@@ -28,7 +28,15 @@ type User = Pick<UserSummary, "id" | "name" | "email" | "suspended">;
 
 const itemClass = "cursor-pointer gap-2.5 rounded-lg p-2.5 focus:bg-white/[0.06] focus:text-white";
 
-export function BuilderActions({ builder: u, variant = "menu", showView = true }: { builder: User; variant?: "menu" | "button"; showView?: boolean }) {
+export function BuilderActions({
+	builder: u,
+	variant = "menu",
+	showView = true,
+}: {
+	builder: User;
+	variant?: "menu" | "button";
+	showView?: boolean;
+}) {
 	const [suspending, setSuspending] = useState(false);
 	const restore = useRestoreUser();
 
@@ -44,13 +52,21 @@ export function BuilderActions({ builder: u, variant = "menu", showView = true }
 					</DropdownMenuTrigger>
 				) : (
 					<DropdownMenuTrigger asChild>
-						<Button className="group h-12 w-full gap-2 text-base sm:w-[260px]" isLoading={restore.isPending} loadingLabel="Saving">
+						<Button
+							className="group h-12 w-full gap-2 text-base sm:w-[260px]"
+							isLoading={restore.isPending}
+							loadingLabel="Saving"
+						>
 							Action
 							<ChevronDown className="size-4 transition-transform duration-200 group-data-[state=open]:rotate-180" />
 						</Button>
 					</DropdownMenuTrigger>
 				)}
-				<DropdownMenuContent align="end" sideOffset={6} className="w-56 rounded-xl border-white/10 bg-[#131318] p-1.5 text-white shadow-xl">
+				<DropdownMenuContent
+					align="end"
+					sideOffset={6}
+					className="w-56 rounded-xl border-white/10 bg-[#131318] p-1.5 text-white shadow-xl"
+				>
 					{showView && (
 						<DropdownMenuItem asChild className={itemClass}>
 							<Link href={routes.builder(u.id)}>
@@ -112,7 +128,8 @@ function SuspendDialog({ user, onClose }: { user: User; onClose: () => void }) {
 					</DialogDescription>
 				</DialogHeader>
 				<label htmlFor="suspend-reason" className="block text-sm">
-					Reason <span className="text-error-200">*</span> <span className="text-white/45">(3–500 characters, recorded in the audit log)</span>
+					Reason <span className="text-error-200">*</span>{" "}
+					<span className="text-white/45">(3–500 characters, recorded in the audit log)</span>
 				</label>
 				<textarea
 					id="suspend-reason"
@@ -127,7 +144,9 @@ function SuspendDialog({ user, onClose }: { user: User; onClose: () => void }) {
 						(touched && tooShort) || serverError ? "border-error-300" : "border-white/30 focus:border-primary-500",
 					)}
 				/>
-				{((touched && tooShort) || serverError) && <p className="text-sm text-error-200">{serverError ?? "Write at least 3 characters."}</p>}
+				{((touched && tooShort) || serverError) && (
+					<p className="text-sm text-error-200">{serverError ?? "Write at least 3 characters."}</p>
+				)}
 				{suspend.isError && !serverError && <p className="text-sm text-error-200">{errorMessage(suspend.error)}</p>}
 				<DialogFooter className="gap-2 sm:gap-2">
 					<Button variant="ghost" className="w-auto px-5" onClick={onClose} disabled={suspend.isPending}>

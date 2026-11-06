@@ -40,7 +40,11 @@ export function OverviewView() {
 
 			{overview.isError && !o ? (
 				<div className="mt-8">
-					<ErrorState message={errorMessage(overview.error)} onRetry={() => void overview.refetch()} retrying={overview.isFetching} />
+					<ErrorState
+						message={errorMessage(overview.error)}
+						onRetry={() => void overview.refetch()}
+						retrying={overview.isFetching}
+					/>
 				</div>
 			) : (
 				<>
@@ -82,7 +86,13 @@ export function OverviewView() {
 							Payments in the last 24 hours
 						</h2>
 						<ul className="mt-4 grid grid-cols-3 gap-3 md:gap-5">
-							<Mini i={0} icon={<CheckCircle2 className="size-5" />} tone="good" label="Confirmed" value={o?.contributions.confirmed24h} />
+							<Mini
+								i={0}
+								icon={<CheckCircle2 className="size-5" />}
+								tone="good"
+								label="Confirmed"
+								value={o?.contributions.confirmed24h}
+							/>
 							<Mini i={1} icon={<XCircle className="size-5" />} tone="bad" label="Failed" value={o?.contributions.failed24h} />
 							<Mini i={2} icon={<Clock className="size-5" />} label="Expired" value={o?.contributions.expired24h} />
 						</ul>
@@ -97,7 +107,9 @@ export function OverviewView() {
 							Analytics
 						</h2>
 						<p className="mt-1 text-sm text-white/55">
-							{a ? `${new Date(a.from).toLocaleDateString("en-GB")} – ${new Date(a.to).toLocaleDateString("en-GB")} (end exclusive)` : " "}
+							{a
+								? `${new Date(a.from).toLocaleDateString("en-GB")} – ${new Date(a.to).toLocaleDateString("en-GB")} (end exclusive)`
+								: " "}
 						</p>
 					</div>
 					<div role="group" aria-label="Period" className="flex gap-1 rounded-lg bg-white/[0.05] p-1">
@@ -120,7 +132,11 @@ export function OverviewView() {
 
 				{analytics.isError && !a ? (
 					<div className="mt-5">
-						<ErrorState message={errorMessage(analytics.error)} onRetry={() => void analytics.refetch()} retrying={analytics.isFetching} />
+						<ErrorState
+							message={errorMessage(analytics.error)}
+							onRetry={() => void analytics.refetch()}
+							retrying={analytics.isFetching}
+						/>
 					</div>
 				) : (
 					<div className={cn("transition-opacity", analytics.isPlaceholderData && "opacity-60")}>
@@ -134,7 +150,13 @@ export function OverviewView() {
 							<Metric
 								i={1}
 								label="Median review time"
-								value={m ? (m.reviewTurnaround.medianHours === null ? "–" : `${m.reviewTurnaround.medianHours.toFixed(1)} h`) : undefined}
+								value={
+									m
+										? m.reviewTurnaround.medianHours === null
+											? "–"
+											: `${m.reviewTurnaround.medianHours.toFixed(1)} h`
+										: undefined
+								}
 								hint={m ? `${m.reviewTurnaround.decisions} decisions` : ""}
 							/>
 							<Metric
@@ -156,8 +178,18 @@ export function OverviewView() {
 								value={m?.suggestions.submitted.toLocaleString()}
 								hint={m ? `From ${m.suggestions.wallets} wallet${m.suggestions.wallets === 1 ? "" : "s"}` : ""}
 							/>
-							<Metric i={6} label="Builders signed up" value={a?.events.builder_registered.toLocaleString()} hint="New accounts" />
-							<Metric i={7} label="Wallets connected" value={a?.events.wallet_connected.toLocaleString()} hint="Wallet sign-ins" />
+							<Metric
+								i={6}
+								label="Builders signed up"
+								value={a?.events.builder_registered.toLocaleString()}
+								hint="New accounts"
+							/>
+							<Metric
+								i={7}
+								label="Wallets connected"
+								value={a?.events.wallet_connected.toLocaleString()}
+								hint="Wallet sign-ins"
+							/>
 						</ul>
 						<div className="mt-5 grid gap-5 xl:grid-cols-2">
 							<FunnelChart
@@ -266,7 +298,11 @@ function Stat({
 							warn ? "text-warning-300" : "text-primary-500",
 						)}
 					>
-						{value === undefined ? <span className="skeleton-shimmer inline-block h-8 w-16 rounded" /> : <CountUp value={value} />}
+						{value === undefined ? (
+							<span className="skeleton-shimmer inline-block h-8 w-16 rounded" />
+						) : (
+							<CountUp value={value} />
+						)}
 					</p>
 					<p className="mt-2 text-base text-white/90 md:text-lg">{label}</p>
 				</div>
@@ -284,7 +320,19 @@ function Stat({
 	);
 }
 
-function Mini({ i, icon, label, value, tone }: { i: number; icon: ReactNode; label: string; value?: number; tone?: "good" | "bad" }) {
+function Mini({
+	i,
+	icon,
+	label,
+	value,
+	tone,
+}: {
+	i: number;
+	icon: ReactNode;
+	label: string;
+	value?: number;
+	tone?: "good" | "bad";
+}) {
 	return (
 		<li data-reveal="up" style={d(i)} className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-4 md:px-5">
 			<p

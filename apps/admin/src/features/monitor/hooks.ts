@@ -6,7 +6,13 @@ import { api, cleanParams, unwrap } from "@/lib/api/client";
 
 /** Contribution monitor (backend guide, "Contributions": builder and admin). */
 
-export type ContributionFilters = { status: ContributionStatus | ""; projectId?: string; address?: string; limit: number; offset: number };
+export type ContributionFilters = {
+	status: ContributionStatus | "";
+	projectId?: string;
+	address?: string;
+	limit: number;
+	offset: number;
+};
 
 export function useAdminContributions(f: ContributionFilters, poll = false) {
 	return useQuery({

@@ -8,7 +8,13 @@ import { api, cleanParams, unwrap } from "@/lib/api/client";
 
 export const USERS_PAGE = 10;
 
-export type UserFilters = { role: Role | ""; q: string; suspended: "" | "true" | "false"; emailVerified: "" | "true" | "false"; page: number };
+export type UserFilters = {
+	role: Role | "";
+	q: string;
+	suspended: "" | "true" | "false";
+	emailVerified: "" | "true" | "false";
+	page: number;
+};
 
 export function useUsers(f: UserFilters) {
 	return useQuery({
@@ -35,7 +41,8 @@ export function useUserCount(params: { role?: Role; suspended?: boolean }) {
 	return useQuery({
 		queryKey: ["admin", "users", "count", params],
 		queryFn: async () =>
-			unwrap<Page<UserSummary>>(await api.get("/admin/users", { params: cleanParams({ ...params, limit: 1 }) })).paginationMeta.totalCount,
+			unwrap<Page<UserSummary>>(await api.get("/admin/users", { params: cleanParams({ ...params, limit: 1 }) })).paginationMeta
+				.totalCount,
 	});
 }
 

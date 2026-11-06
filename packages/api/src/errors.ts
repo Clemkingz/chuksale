@@ -7,7 +7,9 @@ import type { ApiErrorBody } from "@repo/domain/types";
  */
 
 const body = (e: unknown): ApiErrorBody | undefined =>
-	e instanceof AxiosError && e.response?.data && typeof e.response.data === "object" ? (e.response.data as ApiErrorBody) : undefined;
+	e instanceof AxiosError && e.response?.data && typeof e.response.data === "object"
+		? (e.response.data as ApiErrorBody)
+		: undefined;
 
 export const errorStatus = (e: unknown) => (e instanceof AxiosError ? e.response?.status : undefined);
 
@@ -41,7 +43,10 @@ export function errorMessage(e: unknown, fallback = "Something went wrong. Pleas
 		if (isTimeout(e)) return "The server is taking too long to answer. It may be waking up: try again in a moment.";
 		if (!e.response) return "We couldn’t reach the server. Check your connection and try again.";
 		const status = e.response.status;
-		if (status === 503) return body(e)?.message && body(e)?.message !== "Service Unavailable" ? body(e)!.message : "The service is busy. Try again shortly.";
+		if (status === 503)
+			return body(e)?.message && body(e)?.message !== "Service Unavailable"
+				? body(e)!.message
+				: "The service is busy. Try again shortly.";
 		if (status === 429) {
 			const s = retryAfterSeconds(e);
 			const base = body(e)?.message ?? "Too many attempts.";

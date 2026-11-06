@@ -46,16 +46,16 @@ export function summarize(all: Contribution[], now = new Date()): WalletSummary 
 		confirmedCount: confirmed.length,
 		pendingCount: all.filter((c) => c.status === "pending").length,
 		projectsSupported: projects.size,
-		firstAt: confirmed.length ? confirmed.reduce((a, c) => ((c.confirmedAt ?? c.createdAt) < a ? (c.confirmedAt ?? c.createdAt) : a), "9999") : null,
+		firstAt: confirmed.length
+			? confirmed.reduce((a, c) => ((c.confirmedAt ?? c.createdAt) < a ? (c.confirmedAt ?? c.createdAt) : a), "9999")
+			: null,
 		byProject: [...projects.values()]
 			.map((list) => ({ project: list[0]!.project, count: list.length, totals: totalsOf(list) }))
 			.sort((a, b) => b.count - a.count),
 		monthly: months.map((m) => ({
 			...m,
 			amount: sum(
-				confirmed
-					.filter((c) => c.asset.native && (c.confirmedAt ?? c.createdAt).slice(0, 7) === m.month)
-					.map((c) => c.amount),
+				confirmed.filter((c) => c.asset.native && (c.confirmedAt ?? c.createdAt).slice(0, 7) === m.month).map((c) => c.amount),
 			),
 		})),
 	};

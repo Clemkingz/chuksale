@@ -20,7 +20,11 @@ const NO_REFRESH = ["/auth/login", "/auth/register", "/auth/verify-email", "/aut
 
 type RetriableConfig = AxiosRequestConfig & { _retried?: boolean };
 
-const pathOf = (url = "") => url.replace(/^https?:\/\/[^/]+/, "").replace(/^.*\/api\/v1/, "").split("?")[0] ?? "";
+const pathOf = (url = "") =>
+	url
+		.replace(/^https?:\/\/[^/]+/, "")
+		.replace(/^.*\/api\/v1/, "")
+		.split("?")[0] ?? "";
 
 export interface AccountClientOptions {
 	baseURL: string;
@@ -39,7 +43,9 @@ export function createAccountClient({ baseURL, tokens, adapter, onSessionEnd }: 
 			const refreshToken = tokens.getRefreshToken();
 			if (!refreshToken) return false;
 			try {
-				const res = await http.post<ApiSuccess<AuthTokens>>("/auth/refresh", { refreshToken }, { _retried: true } as RetriableConfig);
+				const res = await http.post<ApiSuccess<AuthTokens>>("/auth/refresh", { refreshToken }, {
+					_retried: true,
+				} as RetriableConfig);
 				tokens.save(res.data.data);
 				return true;
 			} catch (e) {
@@ -59,7 +65,14 @@ export function createAccountClient({ baseURL, tokens, adapter, onSessionEnd }: 
 	http.interceptors.request.use(async (config) => {
 		// A reload: no access token in memory yet, but a refresh token. Refresh first rather than eat a 401.
 		const path = pathOf(config.url);
-		if (!tokens.getAccessToken() && tokens.getRefreshToken() && !NO_REFRESH.includes(path) && !path.startsWith("/auth/forgot") && !path.startsWith("/auth/reset") && !path.startsWith("/auth/resend")) {
+		if (
+			!tokens.getAccessToken() &&
+			tokens.getRefreshToken() &&
+			!NO_REFRESH.includes(path) &&
+			!path.startsWith("/auth/forgot") &&
+			!path.startsWith("/auth/reset") &&
+			!path.startsWith("/auth/resend")
+		) {
 			await refreshOnce();
 		}
 		const token = tokens.getAccessToken();
@@ -115,6 +128,7 @@ export const unwrap = <T>(res: { data: ApiSuccess<T> | "" | undefined }): T => (
 /** `?a=1&b=2` params without undefined, null or empty values. */
 export function cleanParams<T extends object>(params: T): Record<string, string | number | boolean> {
 	const out: Record<string, string | number | boolean> = {};
-	for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== "") out[k] = v as string | number | boolean;
+	for (const [k, v] of Object.entries(params))
+		if (v !== undefined && v !== null && v !== "") out[k] = v as string | number | boolean;
 	return out;
 }
