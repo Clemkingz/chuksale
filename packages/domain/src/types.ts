@@ -138,13 +138,34 @@ export interface UserSummary {
 	email: string;
 	name: string;
 	role: Role;
+	/** Signed link, expires: refetch, never store. */
+	avatarUrl: string | null;
 	emailVerified: boolean;
 	suspended: boolean;
 	createdAt: ISODate;
 }
 
+/** GET /admin/users/{id}: everything about the account. */
 export interface UserDetail extends UserSummary {
-	suspension: { reason: string; suspendedBy: string; suspendedAt: ISODate } | null;
+	emailVerifiedAt: ISODate | null;
+	/** Last change to the name or profile picture. */
+	updatedAt: ISODate;
+	/** Most recent password sign-in. */
+	lastLoginAt: ISODate | null;
+	/** Signed-in devices whose session hasn't expired. */
+	activeSessions: number;
+	/** Builder profile (bio, links, socials, wallet, banner). Null for admins. */
+	profile: BuilderProfile | null;
+	/** Projects the builder owns, by status (statuses with none are left out). Null for admins. */
+	projects: { total: number; byStatus: Partial<Record<ProjectStatus, number>> } | null;
+	/** Present while suspended. */
+	suspension: {
+		reason: string;
+		suspendedBy: string;
+		/** Null if that admin's account is gone. */
+		suspendedByName: string | null;
+		suspendedAt: ISODate;
+	} | null;
 }
 
 export interface CreatedAdmin {

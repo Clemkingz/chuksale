@@ -1,4 +1,4 @@
-import type { AdminOverview, AnalyticsEvent, AnalyticsSummary, ProjectAction, ProjectStatus } from "@repo/domain/types";
+import type { AdminOverview, AnalyticsEvent, AnalyticsSummary, ProjectAction, ProjectStatus, UserDetail } from "@repo/domain/types";
 import { PROJECT_ACTION_RULES, actionRequiresReason } from "@repo/domain/project-status";
 import { read, update } from "../db";
 import type { MockDb, ProjectRec, UserRec } from "../records";
@@ -259,11 +259,30 @@ const summary = (u: UserRec) => ({
 	email: u.email,
 	name: u.name,
 	role: u.role,
+	avatarUrl: u.avatarUrl,
 	emailVerified: u.emailVerified,
 	suspended: !!u.suspension,
 	createdAt: u.createdAt,
 });
-const detail = (u: UserRec) => ({ ...summary(u), suspension: u.suspension });
+
+/** Everything about an account (`GET /admin/users/{id}`). Sessions = unused refresh tokens in the mock. */
+function detail(db: MockDb, u: UserRec): UserDetail {
+	const owned = db.projects.filter((p) => p.ownerId === u.id);
+	const byStatus: Partial<Record<ProjectStatus, number>> = {};
+	for (const p of owned) byStatus[p.status] = (byStatus[p.status] ?? 0) + 1;
+	return {
+		...summary(u),
+		emailVerifiedAt: u.emailVerified ? (u.emailVerifiedAt ?? u.createdAt) : null,
+		updatedAt: u.updatedAt ?? u.createdAt,
+		lastLoginAt: u.lastLoginAt ?? null,
+		activeSessions: db.refreshTokens.filter((t) => t.userId === u.id).length,
+		profile: u.role === "builder" ? u.profile : null,
+		projects: u.role === "builder" ? { total: owned.length, byStatus } : null,
+		suspension: u.suspension
+			? { ...u.suspension, suspendedByName: db.users.find((x) => x.id === u.suspension!.suspendedBy)?.name ?? null }
+			: null,
+	};
+}
 
 route("GET", "/admin/users", "admin", ({ query }) => {
 	const db = read();
@@ -310,9 +329,10 @@ route("POST", "/admin/users", "admin", ({ body, user }) => {
 });
 
 route("GET", "/admin/users/:id", "admin", ({ params }) => {
-	const u = read().users.find((x) => x.id === params.id);
+	const db = read();
+	const u = db.users.find((x) => x.id === params.id);
 	if (!u) throw new HttpError(404, "User not found");
-	return ok(detail(u), "User retrieved");
+	return ok(detail(db, u), "User retrieved");
 });
 
 route("POST", "/admin/users/:id/suspension", "admin", ({ params, body, user }) => {
@@ -325,7 +345,7 @@ route("POST", "/admin/users/:id/suspension", "admin", ({ params, body, user }) =
 		u.suspension = { reason, suspendedBy: user!.id, suspendedAt: now() };
 		db.refreshTokens = db.refreshTokens.filter((t) => t.userId !== u.id);
 		audit(db, user!.id, "user.suspend", { type: "user", id: u.id }, { metadata: { reason } });
-		return ok(detail(u), "User suspended", 201);
+		return ok(detail(db, u), "User suspended", 201);
 	});
 });
 
@@ -335,7 +355,7 @@ route("DELETE", "/admin/users/:id/suspension", "admin", ({ params, user }) =>
 		if (!u) throw new HttpError(404, "User not found");
 		u.suspension = null;
 		audit(db, user!.id, "user.restore", { type: "user", id: u.id });
-		return ok(detail(u), "User restored");
+		return ok(detail(db, u), "User restored");
 	}),
 );
 

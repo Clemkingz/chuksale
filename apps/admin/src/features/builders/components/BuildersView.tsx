@@ -162,7 +162,7 @@ export function BuildersView() {
 									>
 										<td className="px-6 py-4">
 											<div className="flex min-w-0 items-center gap-3">
-												<Avatar name={u.name} className="size-10 text-xs" />
+												<Avatar name={u.name} src={u.avatarUrl} className="size-10 text-xs" />
 												<div className="min-w-0">
 													<Link href={routes.builder(u.id)} className="block truncate text-base hover:text-primary-300">
 														{u.name}

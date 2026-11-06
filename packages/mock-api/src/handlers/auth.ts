@@ -84,6 +84,7 @@ route("POST", "/auth/verify-email", "public", ({ body }) => {
 		const u = db.users.find((x) => x.email === s(body.email).trim().toLowerCase());
 		if (!u) throw new HttpError(400, "Invalid or expired code");
 		u.emailVerified = true;
+		u.emailVerifiedAt = now();
 		audit(db, u.id, "auth.verify_email", { type: "user", id: u.id });
 		return ok(issue(db, u), "Email verified");
 	});
@@ -136,6 +137,7 @@ route("POST", "/auth/login", "public", ({ body }) =>
 		if (!u || u.password !== s(body.password)) throw new HttpError(401, "Invalid credentials");
 		if (!u.emailVerified) throw new HttpError(403, "Email not verified");
 		if (u.suspension) throw new HttpError(403, "Account suspended");
+		u.lastLoginAt = now();
 		return ok(issue(db, u), "Login successful");
 	}),
 );
@@ -213,7 +215,10 @@ route("PATCH", "/auth/me", "user", ({ user, body }) => {
 	if (problems.length) throw invalid(problems);
 	return update((db) => {
 		const u = db.users.find((x) => x.id === user!.id)!;
-		if ("name" in body) u.name = str("name");
+		if ("name" in body) {
+			u.name = str("name");
+			u.updatedAt = now();
+		}
 		if (u.profile) {
 			if ("displayName" in body) u.profile.displayName = str("displayName");
 			for (const k of ["organizationName", "bio", "websiteUrl", "contactEmail"] as const)
@@ -234,6 +239,7 @@ route("PUT", "/auth/me/avatar", "user", async ({ user, body }) => {
 	return update((db) => {
 		const u = db.users.find((x) => x.id === user!.id)!;
 		u.avatarUrl = url;
+		u.updatedAt = now();
 		return ok(meDto(u), "Profile picture updated");
 	});
 });

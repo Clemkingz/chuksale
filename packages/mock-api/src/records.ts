@@ -32,6 +32,10 @@ export interface UserRec {
 	/** Mock only: plain text, never sent anywhere. */
 	password: string;
 	emailVerified: boolean;
+	/** Optional so older demo data still loads; the DTO falls back to createdAt. */
+	emailVerifiedAt?: string | null;
+	lastLoginAt?: string | null;
+	updatedAt?: string;
 	suspension: { reason: string; suspendedBy: string; suspendedAt: string } | null;
 	/** Data URL in the mock (the API returns a signed link). */
 	avatarUrl: string | null;
