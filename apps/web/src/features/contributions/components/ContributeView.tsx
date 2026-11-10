@@ -331,7 +331,7 @@ export function ContributeView({ slug }: { slug: string }) {
 									<span className="animate-signal flex size-16 items-center justify-center rounded-full bg-primary-500/15 text-primary-300">
 										<Wallet className="size-7" aria-hidden />
 									</span>
-									<h2 className="mt-5 font-display text-xl font-bold">
+									<h2 className="mt-5 font-display text-xl font-bold text-balance">
 										{phase === "wallet" ? "Approve in your wallet" : "Sending to Stellar…"}
 									</h2>
 									<p className="mt-1.5 max-w-[380px] text-sm text-white/60">
@@ -352,16 +352,16 @@ export function ContributeView({ slug }: { slug: string }) {
 											<li
 												key={ph.id}
 												className={cn(
-													"flex items-center gap-3 text-sm transition-colors",
+													"flex items-start gap-3 text-sm leading-5 transition-colors",
 													i < order ? "text-success-200" : i === order ? "text-white" : "text-white/40",
 												)}
 											>
 												{i < order ? (
-													<Check className="size-4" />
+													<Check className="mt-0.5 size-4 shrink-0" />
 												) : i === order ? (
-													<Loader2 className="size-4 animate-spin" />
+													<Loader2 className="mt-0.5 size-4 shrink-0 animate-spin" />
 												) : (
-													<span className="size-4 rounded-full border border-white/25" />
+													<span className="mt-0.5 size-4 shrink-0 rounded-full border border-white/25" />
 												)}
 												{ph.label}
 											</li>
@@ -378,7 +378,7 @@ export function ContributeView({ slug }: { slug: string }) {
 								<p className="mt-2 max-w-[440px] text-sm leading-6 text-white/70">{failure}</p>
 								<div className="mt-7 flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
 									<Button
-										className="h-12 w-auto px-6"
+										className="h-12 w-full px-6 sm:w-auto"
 										onClick={() => {
 											setFailure(null);
 											setPrepared(null);
@@ -388,7 +388,7 @@ export function ContributeView({ slug }: { slug: string }) {
 										Start again
 									</Button>
 									{prepared && (
-										<Button asChild variant="ghost" className="h-12 w-auto px-6">
+										<Button asChild variant="ghost" className="h-12 w-full px-6 sm:w-auto">
 											<Link href={routes.contribution(prepared.id)}>Check its status</Link>
 										</Button>
 									)}
@@ -432,7 +432,7 @@ function ReviewStep({
 
 	return (
 		<div className="animate-page">
-			<div className="flex flex-wrap items-center justify-between gap-3">
+			<div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
 				<h2 className="font-display text-xl font-bold">Review your contribution</h2>
 				{left !== null && (
 					<span
@@ -504,12 +504,14 @@ function ReviewStep({
 					</Link>
 				</span>
 			</label>
-			<div className="mt-7 flex flex-col-reverse gap-3 sm:flex-row">
-				<Button variant="ghost" className="h-14 sm:w-40" onClick={onBack}>
+			{/* Phones: Back and Confirm side by side in a bar pinned to the bottom of the screen while the review scrolls.
+			    From sm up: the original row inside the card. */}
+			<div className="sticky bottom-0 z-10 -mx-5 mt-7 -mb-7 flex items-center gap-3 rounded-b-[24px] border-t border-white/10 bg-[#16161B] px-5 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-12px_24px_-12px_rgb(0_0_0/0.6)] sm:static sm:mx-0 sm:mb-0 sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none">
+				<Button variant="ghost" className="h-12 w-auto shrink-0 px-4 sm:h-14 sm:w-40" onClick={onBack}>
 					Back
 				</Button>
-				<Button size="lg" className="h-14 flex-1 gap-2 text-base" disabled={!agreed} onClick={onSign}>
-					<Wallet className="size-4" /> Confirm and sign
+				<Button size="lg" className="h-12 min-w-0 flex-1 gap-2 text-base sm:h-14" disabled={!agreed} onClick={onSign}>
+					<Wallet className="size-4 shrink-0" /> <span className="truncate">Confirm and sign</span>
 				</Button>
 			</div>
 		</div>

@@ -49,7 +49,9 @@ export function ConnectWalletDialog() {
 		<Dialog open={open} onOpenChange={(next) => !next && close()}>
 			<DialogContent
 				showCloseButton={false}
-				className="max-h-[92dvh] w-full gap-0 overflow-y-auto rounded-2xl border border-white/5 bg-[#131318] p-6 text-white sm:max-w-[460px] sm:p-9"
+				// One column that never grows past the dialog: a long status line used to widen it on phones, so the
+				// whole card could be dragged sideways while connecting.
+				className="max-h-[92dvh] w-full grid-cols-[minmax(0,1fr)] gap-0 overflow-x-hidden overflow-y-auto overscroll-contain rounded-2xl border border-white/5 bg-[#131318] p-5 text-white sm:max-w-[460px] sm:p-9"
 			>
 				{/* Remount per open so every visit starts clean. */}
 				{open && <ConnectWalletBody reason={reason} onClose={close} onConnected={resolve} />}
@@ -116,26 +118,26 @@ function ConnectWalletBody({
 	}
 
 	return (
-		<div className="flex flex-col">
+		<div className="flex min-w-0 flex-col">
 			<button
 				type="button"
 				onClick={onClose}
 				aria-label="Close"
-				className="absolute top-4 right-4 flex size-8 items-center justify-center rounded-full border-2 border-white/70 text-white/80 transition-colors hover:border-white hover:text-white sm:top-5 sm:right-5"
+				className="absolute top-3.5 right-3.5 flex size-9 items-center justify-center rounded-full border-2 border-white/70 text-white/80 transition-colors hover:border-white hover:text-white sm:top-5 sm:right-5 sm:size-8"
 			>
 				<X className="size-4" strokeWidth={2.5} />
 			</button>
 
-			<DialogTitle className="text-center font-display text-[26px] font-bold text-primary-500 sm:text-[30px]">
+			<DialogTitle className="px-8 text-center font-display text-[22px] font-bold text-primary-500 min-[360px]:text-[24px] sm:px-0 sm:text-[30px]">
 				Connect Wallet
 			</DialogTitle>
-			<DialogDescription className="mt-2 text-center text-[15px] leading-6 text-white/85">
+			<DialogDescription className="mt-2 text-center text-[14px] leading-6 text-white/85 sm:text-[15px]">
 				{reason ?? "Keep your secret key and recovery phrase safe. We’ll never ask for them, so never share them with anyone!"}
 			</DialogDescription>
 
 			{problem && <ProblemBanner problem={problem} phone={phone} onRetry={() => lastTried && connect(lastTried)} />}
 
-			<ul className="mt-6 overflow-hidden rounded-xl bg-[#363636] sm:mt-7" aria-label="Wallets">
+			<ul className="mt-5 overflow-hidden rounded-xl bg-[#363636] sm:mt-7" aria-label="Wallets">
 				{visible.map((row, i) => {
 					const isBusy = busy === row.id;
 					const isDone = done === row.id;
@@ -150,7 +152,7 @@ function ConnectWalletBody({
 								onClick={() => connect(row.id)}
 								disabled={!!busy || !!done}
 								aria-busy={isBusy || undefined}
-								className="flex w-full items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-white/5 focus-visible:bg-white/5 focus-visible:outline-none disabled:cursor-default disabled:hover:bg-transparent"
+								className="flex min-h-[66px] w-full min-w-0 items-center gap-3 px-3.5 py-3 text-left transition-colors hover:bg-white/5 focus-visible:bg-white/5 focus-visible:outline-none disabled:cursor-default disabled:hover:bg-transparent sm:gap-4 sm:px-4"
 							>
 								<span
 									className={cn(
@@ -163,11 +165,14 @@ function ConnectWalletBody({
 								</span>
 								<span className="min-w-0 flex-1">
 									<span className="block text-[17px] text-white">{row.name}</span>
-									<span className="block truncate text-xs text-white/55">{isBusy ? STAGE_COPY[stage] : row.kind}</span>
+									{/* Wraps (two lines at most) rather than widening the row; the live stage is announced. */}
+									<span aria-live={isBusy ? "polite" : undefined} className="line-clamp-2 block text-xs leading-[1.35] text-white/55">
+										{isBusy ? STAGE_COPY[stage] : row.kind}
+									</span>
 								</span>
-								{isBusy && <BtnLoader className="size-5 text-primary-400" label={`Connecting ${row.name}`} />}
+								{isBusy && <BtnLoader className="size-5 shrink-0 text-primary-400" label={`Connecting ${row.name}`} />}
 								{isDone && (
-									<span className="animate-pop flex size-6 items-center justify-center rounded-full bg-success-300 text-white">
+									<span className="animate-pop flex size-6 shrink-0 items-center justify-center rounded-full bg-success-300 text-white">
 										<Check className="size-4" strokeWidth={3} aria-label="Connected" />
 									</span>
 								)}
@@ -181,7 +186,7 @@ function ConnectWalletBody({
 				<button
 					type="button"
 					onClick={cancel}
-					className="mx-auto mt-5 text-[15px] text-white/80 underline-offset-4 hover:text-white hover:underline"
+					className="mx-auto mt-4 min-h-11 px-4 text-[15px] text-white/80 underline-offset-4 hover:text-white hover:underline sm:mt-5"
 				>
 					Cancel
 				</button>
@@ -191,14 +196,14 @@ function ConnectWalletBody({
 						type="button"
 						onClick={() => setShowMore((v) => !v)}
 						aria-expanded={showMore}
-						className="mx-auto mt-6 text-[16px] text-white transition-colors hover:text-primary-400"
+						className="mx-auto mt-4 min-h-11 px-4 text-[16px] text-white transition-colors hover:text-primary-400 sm:mt-5"
 					>
 						{showMore ? "Fewer wallet options" : "More wallet options"}
 					</button>
 				)
 			)}
 
-			<div className="mt-5 flex items-center gap-4 text-[15px] text-white/90" aria-hidden>
+			<div className="mt-3 flex items-center gap-4 text-[15px] text-white/90 sm:mt-4" aria-hidden>
 				<span className="h-px flex-1 bg-white/40" />
 				or
 				<span className="h-px flex-1 bg-white/40" />
