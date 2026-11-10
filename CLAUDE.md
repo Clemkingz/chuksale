@@ -91,6 +91,8 @@ Deploy: one Vercel project with Services (`vercel.json`): landing at `/`, web at
 
 - Stellar Wallets Kit 2.x, loaded on first use (`kit.ts`, adapted from reference `payer-wallet`), Testnet-pinned.
   Varial (module id `freighter`) / xBull extensions, Albedo, LOBSTR + Varial app over WalletConnect on phones.
+  WalletConnect uses Chucksales' Reown project `bf4b8748…ed93` (public; `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`
+  overrides). Every domain the app runs on must be in that project's allowlist on the Reown dashboard.
 - Contributing: `POST /projects/{slug}/contributions` prepares the payment (API checks asset, trustline, balance) →
   the wallet signs `transaction` with its `networkPassphrase` → `POST /contributions/{id}/submit` → poll while pending.
   A closed wallet popup is never success; a lost submit response goes to the status page (never resend).

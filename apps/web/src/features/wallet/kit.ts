@@ -81,10 +81,11 @@ export function hasApp(id: WalletId) {
 
 /**
  * WalletConnect (Reown) project id: lets phone wallets pair with the page (a deep link on a phone, a QR code
- * on a laptop). Not a secret: it ships in the bundle, and the project's domain allowlist protects it, so
- * every deployed domain must be listed there. TODO: create our own Reown project id. NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID overrides it.
+ * on a laptop). Chucksales' own Reown project. Not a secret: it ships in the bundle, and the project's domain
+ * allowlist (Reown dashboard) protects it, so every domain the app runs on must be listed there.
+ * NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID overrides it.
  */
-const WALLETCONNECT_PROJECT_ID = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "b8cc56756132b11f2077932ac3d6f807";
+const WALLETCONNECT_PROJECT_ID = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "bf4b8748839438a8bdbc7ae9ed55ed93";
 const WALLETCONNECT_ID = "wallet_connect";
 
 /** How long a browser-extension wallet gets to answer "are you there?". */
